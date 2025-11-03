@@ -1,12 +1,12 @@
-import QtQuick 2.15
-import QtQuick.Controls 2.15
-import QtQuick.Layouts 1.15
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 
 ApplicationWindow {
     id: window
     visible: true
-    width: 1280
-    height: 720
+    width: 1920
+    height: 1080
     title: "Trahere"
     color: "#31363b"
 
@@ -36,7 +36,7 @@ ApplicationWindow {
                         Layout.preferredWidth: 64
                         Layout.preferredHeight: 64
                         Layout.alignment: Qt.AlignHCenter
-                        source: "Trahere_logo.png"
+                        source: "Images/Trahere_logo.png"
                         fillMode: Image.PreserveAspectFit
                     }
 
@@ -52,10 +52,11 @@ ApplicationWindow {
                             spacing: 4
 
                             Image {
+                                id: draw_logo
                                 width: 40
                                 height: 40
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                source: "draw_logo.png"
+                                source: "Images/draw_logo.png"
                                 fillMode: Image.PreserveAspectFit
                             }
 
@@ -85,7 +86,7 @@ ApplicationWindow {
                                 width: 40
                                 height: 40
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                source: "open_logo.png"
+                                source: "Images/open_logo.png"
                                 fillMode: Image.PreserveAspectFit
                             }
 
@@ -112,7 +113,7 @@ ApplicationWindow {
                         Layout.bottomMargin: 16
 
                         contentItem: Image {
-                            source: "setting_logo.png"
+                            source: "Images/setting_logo.png"
                             fillMode: Image.PreserveAspectFit
                         }
 

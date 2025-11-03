@@ -16,11 +16,11 @@ qt_add_qml_module(appTrahere
     URI Trahere
     QML_FILES
         Main.qml
-        RESOURCES
-        RESOURCES
-        RESOURCES
-        RESOURCES
-        RESOURCES
+    RESOURCES
+        Images/Trahere_logo.png
+        Images/open_logo.png
+        Images/setting_logo.png
+        Images/draw_logo.png
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
