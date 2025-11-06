@@ -16,6 +16,7 @@ qt_add_qml_module(appTrahere
     URI Trahere
     QML_FILES
         Main.qml
+        CanvasWindow.qml
     RESOURCES
         Images/Trahere_logo.png
         Images/open_logo.png
