@@ -21,7 +21,7 @@ Window {
 
         Column {
             anchors.fill: parent
-            spacing: 0
+            spacing: 20
 
             // Top menu bar with common menus
             MenuBar {
@@ -94,16 +94,14 @@ Window {
             }
 
             // White drawing surface centered
-            Rectangle {
-                id: drawingArea
-                width: Math.min(parent.width - 40, canvasWindow.initialWidth)
-                height: Math.min(parent.height - topMenuBar.height - 40, canvasWindow.initialHeight)
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: topMenuBar.bottom
-                anchors.topMargin: 20
-                color: "white"
-                border.color: "#888"
-                border.width: 1
+                Rectangle {
+                    id: drawingArea
+                    width: Math.min(parent.width - 40, canvasWindow.initialWidth)
+                    height: Math.min(parent.height - topMenuBar.height - 40, canvasWindow.initialHeight)
+                    x: (parent.width - width) / 2
+                    color: "white"
+                    border.color: "#888"
+                    border.width: 1
 
                 // Fallback drawing area: simple Canvas-like placeholder (some Qt builds may not include QtQuick.Canvas)
                 Rectangle {

@@ -213,6 +213,12 @@ ApplicationWindow {
         }
     }
 
+    // Hidden image used to store the loaded file path so FileDialog can set it
+    Image {
+        id: loadedImage
+        visible: false
+    }
+
     // Create New Document Window (Draggable)
     Window {
         id: createDocWindow
