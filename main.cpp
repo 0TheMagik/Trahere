@@ -1,6 +1,8 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QtQuickControls2/QQuickStyle>
+#include <QQmlEngine>
+#include "OraCreator.h"
 
 int main(int argc, char *argv[])
 {
@@ -11,6 +13,9 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
 
     QQmlApplicationEngine engine;
+
+    // Expose OraCreator to QML as Trahere.OraCreator
+    qmlRegisterType<OraCreator>("Trahere", 1, 0, "OraCreator");
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

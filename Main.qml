@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import Trahere 1.0
 
 ApplicationWindow {
     id: window
@@ -253,44 +254,44 @@ ApplicationWindow {
                 }
             }
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 8
+            // RowLayout {
+            //     anchors.fill: parent
+            //     anchors.leftMargin: 12
+            //     anchors.rightMargin: 8
 
-                Image {
-                    Layout.preferredWidth: 24
-                    Layout.preferredHeight: 24
-                    source: "Images/Trahere_logo.png"
-                    fillMode: Image.PreserveAspectFit
-                }
+            //     Image {
+            //         Layout.preferredWidth: 24
+            //         Layout.preferredHeight: 24
+            //         source: "Images/Trahere_logo.png"
+            //         fillMode: Image.PreserveAspectFit
+            //     }
 
-                Text {
-                    text: "Create new document - Krita"
-                    color: "#bbbbbb"
-                    font.pixelSize: 13
-                    Layout.fillWidth: true
-                }
+            //     Text {
+            //         text: "Create new document - Krita"
+            //         color: "#bbbbbb"
+            //         font.pixelSize: 13
+            //         Layout.fillWidth: true
+            //     }
 
-                Button {
-                    text: "✕"
-                    flat: true
-                    Layout.preferredWidth: 30
-                    Layout.preferredHeight: 30
-                    onClicked: createDocWindow.close()
+            //     Button {
+            //         text: "✕"
+            //         flat: true
+            //         Layout.preferredWidth: 30
+            //         Layout.preferredHeight: 30
+            //         onClicked: createDocWindow.close()
 
-                    background: Rectangle {
-                        color: parent.hovered ? "#e81123" : "transparent"
-                    }
+            //         background: Rectangle {
+            //             color: parent.hovered ? "#e81123" : "transparent"
+            //         }
 
-                    contentItem: Text {
-                        text: parent.text
-                        color: "white"
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                }
-            }
+            //         contentItem: Text {
+            //             text: parent.text
+            //             color: "white"
+            //             horizontalAlignment: Text.AlignHCenter
+            //             verticalAlignment: Text.AlignVCenter
+            //         }
+            //     }
+            // }
         }
 
         // Main Content
@@ -940,28 +941,8 @@ ApplicationWindow {
                                 }
 
                                 onClicked: {
-                                    // Helper: convert given value+unit to pixels using resolutionSpinBox (dpi)
-                                    function toPixels(value, unit) {
-                                        var dpi = resolutionSpinBox.value
-                                        if (!unit) return Math.round(value)
-                                        if (unit.indexOf("Pixels") === 0) return Math.round(value)
-                                        if (unit.indexOf("Inches") !== -1) return Math.round(value * dpi)
-                                        if (unit.indexOf("cm") !== -1) return Math.round((value / 2.54) * dpi)
-                                        return Math.round(value)
-                                    }
-
-                                    var pixelWidth = toPixels(widthSpinBox.value, widthUnitCombo.currentText)
-                                    var pixelHeight = toPixels(heightSpinBox.value, heightUnitCombo.currentText)
-
-                                    createDocWindow.close()
-
-                                    var comp = Qt.createComponent("CanvasWindow.qml")
-                                    if (comp.status === Component.Ready) {
-                                        var win = comp.createObject(window, { initialWidth: pixelWidth, initialHeight: pixelHeight })
-                                        if (!win) console.log("Failed to create CanvasWindow:", comp.errorString())
-                                    } else {
-                                        console.log("Canvas component not ready:", comp.status, comp.errorString())
-                                    }
+                                    // Open a save file dialog to choose .ora destination, then create document + .ora archive.
+                                    saveOraDialog.open()
                                 }
                             }
 
@@ -989,4 +970,49 @@ ApplicationWindow {
             }
         }
     }
+
+    // Save File Dialog for creating .ora
+    FileDialog {
+        id: saveOraDialog
+        title: "Save New .ora File"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["OpenRaster (*.ora)", "All files (*)"]
+        onAccepted: {
+            // Compute pixel dimensions based on selected units prior to closing create window.
+            function toPixels(value, unit) {
+                var dpi = resolutionSpinBox.value
+                if (!unit) return Math.round(value)
+                if (unit.indexOf("Pixels") === 0) return Math.round(value)
+                if (unit.indexOf("Inches") !== -1) return Math.round(value * dpi)
+                if (unit.indexOf("cm") !== -1) return Math.round((value / 2.54) * dpi)
+                return Math.round(value)
+            }
+            var pixelWidth = toPixels(widthSpinBox.value, widthUnitCombo.currentText)
+            var pixelHeight = toPixels(heightSpinBox.value, heightUnitCombo.currentText)
+
+            // Log and pass QML url directly; C++ overload accepts QUrl and will normalize/append .ora
+            console.log("Save .ora to:", String(saveOraDialog.selectedFile))
+
+            var helper = oraCreator
+            if (helper.createOra(saveOraDialog.selectedFile, pixelWidth, pixelHeight)) {
+                console.log("Created .ora file")
+                createDocWindow.close()
+                var comp = Qt.createComponent("CanvasWindow.qml")
+                if (comp.status === Component.Ready) {
+                    var win = comp.createObject(window, { initialWidth: pixelWidth, initialHeight: pixelHeight })
+                    if (!win) console.log("Failed to create CanvasWindow:", comp.errorString())
+                } else {
+                    console.log("Canvas component not ready:", comp.status, comp.errorString())
+                }
+            } else {
+                console.log("Failed to create .ora file")
+            }
+        }
+        onRejected: {
+            console.log("Save .ora canceled")
+        }
+    }
+
+    // Singleton instance for OraCreator
+    OraCreator { id: oraCreator }
 }
