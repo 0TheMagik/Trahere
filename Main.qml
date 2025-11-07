@@ -206,8 +206,8 @@ ApplicationWindow {
         title: "Open File - Trahere"
         nameFilters: ["OpenRaster (*.ora)", "Image files (*.png *.jpg *.jpeg *.bmp *.kra)", "All files (*)"]
         onAccepted: {
-            console.log("Selected file:", fileDialog.selectedFile.toString ? fileDialog.selectedFile.toString() : fileDialog.selectedFile)
-            if ((fileDialog.selectedFile.toString ? fileDialog.selectedFile.toString() : String(fileDialog.selectedFile)).toLowerCase().endsWith(".ora")) {
+            console.log("Selected file:", fileDialog.selectedFile)
+            if (String(fileDialog.selectedFile).toLowerCase().endsWith(".ora")) {
                 let dirPath = oraLoader.loadOra(fileDialog.selectedFile)
                 if (dirPath.length === 0) {
                     console.log("Failed to load .ora")
