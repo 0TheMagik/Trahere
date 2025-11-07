@@ -2,7 +2,8 @@
 #include <QQmlApplicationEngine>
 #include <QtQuickControls2/QQuickStyle>
 #include <QQmlEngine>
-#include "OraCreator.h"
+#include "ora/OraCreator.h"
+#include "ora/OraLoader.h"
 
 int main(int argc, char *argv[])
 {
@@ -14,8 +15,9 @@ int main(int argc, char *argv[])
 
     QQmlApplicationEngine engine;
 
-    // Expose OraCreator to QML as Trahere.OraCreator
+    // Expose C++ types to QML under the Trahere 1.0 import
     qmlRegisterType<OraCreator>("Trahere", 1, 0, "OraCreator");
+    qmlRegisterType<OraLoader>("Trahere", 1, 0, "OraLoader");
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

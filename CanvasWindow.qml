@@ -1,6 +1,6 @@
-import QtQuick 2.15
-import QtQuick.Window 2.15
-import QtQuick.Controls 2.15
+import QtQuick
+import QtQuick.Window
+import QtQuick.Controls
 
 Window {
     id: canvasWindow
@@ -14,6 +14,8 @@ Window {
 
     property int initialWidth: 0
     property int initialHeight: 0
+    // Optional: show an image inside the canvas (e.g., mergedimage from ORA)
+    property url imageSource: ""
 
     Rectangle {
         anchors.fill: parent
@@ -103,11 +105,14 @@ Window {
                     border.color: "#888"
                     border.width: 1
 
-                // Fallback drawing area: simple Canvas-like placeholder (some Qt builds may not include QtQuick.Canvas)
-                Rectangle {
+                // Show image if provided; otherwise transparent placeholder
+                Image {
                     anchors.fill: parent
-                    color: "transparent"
+                    fillMode: Image.PreserveAspectFit
+                    source: canvasWindow.imageSource
+                    visible: source !== ""
                 }
+                Rectangle { anchors.fill: parent; color: "transparent"; visible: canvasWindow.imageSource === "" }
             }
         }
     }

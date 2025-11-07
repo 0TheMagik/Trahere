@@ -11,6 +11,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QUrl>
+#include <utility> // std::as_const
 
 namespace {
 
@@ -125,7 +126,7 @@ public:
         QDataStream out(&f);
         out.setByteOrder(QDataStream::LittleEndian);
         // Central directory
-        for (const ZipEntryMeta &e : entries) {
+        for (const ZipEntryMeta &e : std::as_const(entries)) {
             out << quint32(0x02014B50)
                 << quint16(20) // version made by
                 << quint16(20) // version needed to extract

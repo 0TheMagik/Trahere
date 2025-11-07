@@ -204,14 +204,37 @@ ApplicationWindow {
     FileDialog {
         id: fileDialog
         title: "Open File - Trahere"
-        nameFilters: ["Image files (*.png *.jpg *.jpeg *.bmp *.kra)", "All files (*)"]
+        nameFilters: ["OpenRaster (*.ora)", "Image files (*.png *.jpg *.jpeg *.bmp *.kra)", "All files (*)"]
         onAccepted: {
-            console.log("Selected file:", fileDialog.selectedFile)
-            loadedImage.source = fileDialog.selectedFile
+            console.log("Selected file:", fileDialog.selectedFile.toString ? fileDialog.selectedFile.toString() : fileDialog.selectedFile)
+            if ((fileDialog.selectedFile.toString ? fileDialog.selectedFile.toString() : String(fileDialog.selectedFile)).toLowerCase().endsWith(".ora")) {
+                let dirPath = oraLoader.loadOra(fileDialog.selectedFile)
+                if (dirPath.length === 0) {
+                    console.log("Failed to load .ora")
+                    return
+                }
+                console.log("Extracted .ora to temp:", dirPath, "stack:", oraLoader.stackXmlPath())
+                // Quick preview: show mergedimage.png if exists, else first layer (data/layer0.png)
+                function pathToUrl(p) { return "file:///" + p.replace(/\\\\/g, "/") }
+                var merged = pathToUrl(dirPath + "/mergedimage.png")
+                var layer0 = pathToUrl(dirPath + "/data/layer0.png")
+
+                // Create a preview window using CanvasWindow
+                var comp = Qt.createComponent("CanvasWindow.qml")
+                if (comp.status === Component.Ready) {
+                    var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged })
+                    // If merged image not found, fallback to layer0
+                    if (win && win.imageSource === "" ) {
+                        win.imageSource = layer0
+                    }
+                } else {
+                    console.log("Canvas component not ready:", comp.status, comp.errorString())
+                }
+            } else {
+                loadedImage.source = fileDialog.selectedFile
+            }
         }
-        onRejected: {
-            console.log("File selection canceled")
-        }
+        onRejected: console.log("File selection canceled")
     }
 
     // Hidden image used to store the loaded file path so FileDialog can set it
@@ -1015,4 +1038,5 @@ ApplicationWindow {
 
     // Singleton instance for OraCreator
     OraCreator { id: oraCreator }
+    OraLoader { id: oraLoader }
 }
