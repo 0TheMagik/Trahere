@@ -15,6 +15,8 @@ Window {
 
     property int initialWidth: 0
     property int initialHeight: 0
+    // Optional: show an image inside the canvas (e.g., mergedimage from ORA)
+    property url imageSource: ""
 
     Rectangle {
         anchors.fill: parent

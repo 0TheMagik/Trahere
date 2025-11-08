@@ -16,6 +16,10 @@ qt_add_executable(appTrahere
     src/BrushEngine.h
     src/GLRenderer.cpp
     src/GLRenderer.h
+    ora/OraCreator.h
+    ora/OraCreator.cpp
+    ora/OraLoader.h
+    ora/OraLoader.cpp
 )
 
 qt_add_qml_module(appTrahere
