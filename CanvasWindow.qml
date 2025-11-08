@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQuick.Controls 2.15
+import Trahere 1.0
 
 Window {
     id: canvasWindow
@@ -39,12 +40,22 @@ Window {
                 }
 
                 Menu { title: "Edit"
-                    MenuItem { text: "Undo" }
+                    MenuItem {
+                        text: "Undo"
+                        onTriggered: glCanvas.undoLastStroke()
+                        enabled: glCanvas.strokeCount > 0
+                    }
                     MenuItem { text: "Redo" }
                     MenuSeparator {}
                     MenuItem { text: "Cut" }
                     MenuItem { text: "Copy" }
                     MenuItem { text: "Paste" }
+                    MenuSeparator {}
+                    MenuItem {
+                        text: "Clear Canvas"
+                        onTriggered: glCanvas.clearAllStrokes()
+                        enabled: glCanvas.strokeCount > 0
+                    }
                 }
 
                 Menu { title: "View"
@@ -93,6 +104,64 @@ Window {
                 }
             }
 
+            // Brush controls
+            Row {
+                id: brushControls
+                width: parent.width
+                height: 40
+                spacing: 12
+                anchors.left: parent.left
+                anchors.leftMargin: 20
+                anchors.right: parent.right
+                anchors.rightMargin: 20
+
+                Text {
+                    text: "Brush size"
+                    color: "#333"
+                    font.pixelSize: 12
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                Slider {
+                    id: brushSizeSlider
+                    from: 1
+                    to: 100
+                    value: glCanvas.brushSize
+                    width: 240
+                    onMoved: glCanvas.brushSize = value
+                }
+
+                Text {
+                    text: Math.round(glCanvas.brushSize) + " px"
+                    color: "#333"
+                    font.pixelSize: 12
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                Rectangle { width: 1; height: parent.height; color: "#ddd" }
+
+                Button {
+                    id: undoBtn
+                    text: "Undo"
+                    enabled: glCanvas.strokeCount > 0
+                    onClicked: glCanvas.undoLastStroke()
+                }
+
+                Button {
+                    id: clearBtn
+                    text: "Clear"
+                    enabled: glCanvas.strokeCount > 0
+                    onClicked: glCanvas.clearAllStrokes()
+                }
+
+                Text {
+                    text: "Strokes: " + glCanvas.strokeCount
+                    color: "#666"
+                    font.pixelSize: 12
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
             // White drawing surface centered
                 Rectangle {
                     id: drawingArea
@@ -103,12 +172,14 @@ Window {
                     border.color: "#888"
                     border.width: 1
 
-                // Fallback drawing area: simple Canvas-like placeholder (some Qt builds may not include QtQuick.Canvas)
-                Rectangle {
-                    anchors.fill: parent
-                    color: "transparent"
+                    Canvas {
+                        id: glCanvas
+                        anchors.fill: parent
+                        brushColor: "black"
+                        brushSize: 5
+                        z: 1
+                    }
                 }
-            }
         }
     }
 }

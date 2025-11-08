@@ -10,6 +10,12 @@ qt_standard_project_setup(REQUIRES 6.8)
 
 qt_add_executable(appTrahere
     main.cpp
+    src/Canvas.h
+    src/Canvas.cpp
+    src/BrushEngine.cpp
+    src/BrushEngine.h
+    src/GLRenderer.cpp
+    src/GLRenderer.h
 )
 
 qt_add_qml_module(appTrahere
