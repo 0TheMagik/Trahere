@@ -10,6 +10,10 @@ qt_standard_project_setup(REQUIRES 6.8)
 
 qt_add_executable(appTrahere
     main.cpp
+    ora/OraCreator.h
+    ora/OraCreator.cpp
+    ora/OraLoader.h
+    ora/OraLoader.cpp
 )
 
 qt_add_qml_module(appTrahere
