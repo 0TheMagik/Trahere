@@ -1,4 +1,5 @@
 #include "BrushEngine.h"
+#include <utility>
 
 void BrushEngine::beginStroke(const QVector2D &pos, const QColor &color, float size) {
     m_currentStroke = BrushStroke{color, size, {pos}};
@@ -12,8 +13,10 @@ void BrushEngine::addPoint(const QVector2D &pos) {
 
 void BrushEngine::endStroke() {
     if (m_drawing) {
-        m_strokes.append(m_currentStroke);
-        m_currentStroke.points.clear();
+        // Move the current stroke into the list to avoid unnecessary copies
+        m_strokes.append(std::move(m_currentStroke));
+        // Reset current stroke to defaults
+        m_currentStroke = BrushStroke{};
         m_drawing = false;
     }
 }
