@@ -5,7 +5,8 @@
 Canvas::Canvas(QQuickItem *parent)
     : QQuickFramebufferObject(parent),
       m_brushColor(Qt::black),
-      m_brushSize(5.0f)
+      m_brushSize(5.0f),
+      m_cursorPos(QVector2D(0,0))
 {
     setAcceptedMouseButtons(Qt::AllButtons);
 }
@@ -29,16 +30,22 @@ void Canvas::setBrushSize(float size) {
 }
 
 void Canvas::mousePressEvent(QMouseEvent *event) {
+    m_cursorPos = QVector2D(event->position());
+    emit cursorPosChanged();
     m_brush.beginStroke(QVector2D(event->position()), m_brushColor, m_brushSize);
     update();
 }
 
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
+    m_cursorPos = QVector2D(event->position());
+    emit cursorPosChanged();
     m_brush.addPoint(QVector2D(event->position()));
     update();
 }
 
 void Canvas::mouseReleaseEvent(QMouseEvent *event) {
+    m_cursorPos = QVector2D(event->position());
+    emit cursorPosChanged();
     m_brush.endStroke();
     emit strokeCountChanged();
     update();

@@ -13,6 +13,7 @@ class Canvas : public QQuickFramebufferObject {
     Q_PROPERTY(QColor brushColor READ brushColor WRITE setBrushColor NOTIFY brushColorChanged)
     Q_PROPERTY(float brushSize READ brushSize WRITE setBrushSize NOTIFY brushSizeChanged)
     Q_PROPERTY(int strokeCount READ strokeCount NOTIFY strokeCountChanged)
+    Q_PROPERTY(QVector2D cursorPos READ cursorPos NOTIFY cursorPosChanged)
 
 public:
     explicit Canvas(QQuickItem *parent = nullptr);
@@ -27,6 +28,8 @@ public:
 
     int strokeCount() const { return m_brush.strokeCount(); }
 
+    QVector2D cursorPos() const { return m_cursorPos; }
+
     Q_INVOKABLE bool undoLastStroke();
     Q_INVOKABLE bool removeStroke(int index);
     Q_INVOKABLE void clearAllStrokes();
@@ -35,6 +38,7 @@ signals:
     void brushColorChanged();
     void brushSizeChanged();
     void strokeCountChanged();
+    void cursorPosChanged();
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -47,4 +51,5 @@ public:
 private:
     QColor m_brushColor;
     float m_brushSize;
+    QVector2D m_cursorPos;
 };
