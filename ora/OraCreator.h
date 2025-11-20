@@ -14,4 +14,8 @@ public:
 
     // Overload for QML 'url' type; converts URL to local file path and delegates.
     Q_INVOKABLE bool createOra(const QUrl &destinationUrl, int width, int height);
+
+    // Save an ORA using provided raster image as single layer (data/layer0.png).
+    Q_INVOKABLE bool saveOra(const QString &destinationPath, const QImage &layerImg);
+    Q_INVOKABLE bool saveOra(const QUrl &destinationUrl, const QImage &layerImg);
 };

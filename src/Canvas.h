@@ -4,6 +4,7 @@
 #include <QColor>
 #include <QList>
 #include <QQmlListProperty>
+#include <QImage>
 
 #include "BrushEngine.h"
 
@@ -54,6 +55,17 @@ public:
     Q_INVOKABLE int addLayer(const QString &name = QString()); // returns new layer index
     Q_INVOKABLE bool removeLayer(int index);
     Q_INVOKABLE void setLayer(int index) { setActiveLayerIndex(index); }
+    // Load a base image (PNG/JPEG) that will be drawn under strokes
+    Q_INVOKABLE bool loadBaseImage(const QUrl &imageUrl);
+    // Save current composited canvas (base + strokes) to .ora
+    Q_INVOKABLE bool saveOra(const QUrl &destinationUrl);
+    // Save only the painted strokes (transparent background, no base image)
+    Q_INVOKABLE bool saveOraStrokesOnly(const QUrl &destinationUrl);
+    // Export composited image as QImage (for testing / other saves)
+    Q_INVOKABLE QImage compositedImage() const;
+
+    const QImage &baseImage() const { return m_baseImage; }
+    bool hasBaseImage() const { return !m_baseImage.isNull(); }
 
 signals:
     void brushColorChanged();
@@ -74,4 +86,5 @@ private:
     QVector2D m_cursorPos;
     QList<Layer*> m_layers;
     int m_activeLayerIndex = -1;
+    QImage m_baseImage;
 };

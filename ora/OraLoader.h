@@ -17,9 +17,13 @@ public:
 
     //call this to get absolute path to stack.xml (empty if not present).
     Q_INVOKABLE QString stackXmlPath() const { return m_stackXml; }
+    Q_INVOKABLE QString rootDir() const { return m_rootDir; }
+    // Return absolute paths to layer image files referenced in stack.xml (if loaded)
+    Q_INVOKABLE QStringList layerImagePaths() const;
 
 private:
     QString m_stackXml;
+    QString m_rootDir;
     // Holds the lifetime of the extracted .ora archive. Re-created on each loadOra() call.
     std::unique_ptr<QTemporaryDir> m_tmpDir; 
 };

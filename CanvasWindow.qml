@@ -1,6 +1,7 @@
-import QtQuick 2.15
-import QtQuick.Window 2.15
-import QtQuick.Controls 2.15
+import QtQuick 
+import QtQuick.Window
+import QtQuick.Controls 
+import QtQuick.Dialogs
 import QtQuick.Layouts 1.15
 import Trahere 1.0
 
@@ -18,6 +19,10 @@ Window {
     property int initialHeight: 0
     // Optional: show an image inside the canvas (e.g., mergedimage from ORA)
     property url imageSource: ""
+    // Fallback layer image (e.g., data/layer0.png) if mergedimage.png not present
+    property url fallbackImageSource: ""
+    // Stores local filesystem path (without file:/// prefix)
+    property string lastOraPath: ""
 
     // Palette centralization
     readonly property color uiBg: "#f2f2f3"
@@ -45,8 +50,25 @@ Window {
                 Menu { title: "File"
                     MenuItem { text: "New" }
                     MenuItem { text: "Open..." }
-                    MenuItem { text: "Save" }
-                    MenuItem { text: "Save As..." }
+                    MenuItem {
+                        text: "Save"
+                        onTriggered: {
+                            if (lastOraPath.length === 0) {
+                                console.log("No ORA path set; ignoring Save")
+                                return
+                            }
+                            var ok = glCanvas.saveOraStrokesOnly("file:///" + lastOraPath.replace(/\\/g,"/"))
+                            console.log(ok ? "Saved strokes-only ORA:" : "Failed strokes-only save", lastOraPath)
+                        }
+                    }
+                    MenuItem {
+                        text: "Save As..."
+                        onTriggered: saveOraDialog.open()
+                    }
+                    MenuItem {
+                        text: "Save Strokes Only..."
+                        onTriggered: saveStrokesDialog.open()
+                    }
                     MenuSeparator {}
                     MenuItem { text: "Export..." }
                     MenuItem { text: "Close" }
@@ -263,6 +285,15 @@ Window {
                         brushColor: "black"
                         brushSize: 5
                         z: 1
+                        Component.onCompleted: {
+                            if (canvasWindow.imageSource !== "") {
+                                if (!glCanvas.loadBaseImage(canvasWindow.imageSource) && canvasWindow.fallbackImageSource !== "") {
+                                    glCanvas.loadBaseImage(canvasWindow.fallbackImageSource)
+                                }
+                            } else if (canvasWindow.fallbackImageSource !== "") {
+                                glCanvas.loadBaseImage(canvasWindow.fallbackImageSource)
+                            }
+                        }
                     }
                 }
             }
@@ -284,5 +315,37 @@ Window {
             candidate = base + " " + n;
         }
         return candidate;
+    }
+
+    FileDialog {
+        id: saveOraDialog
+        title: "Save Canvas as .ora"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["OpenRaster (*.ora)", "All files (*)"]
+        onAccepted: {
+            var urlStr = String(selectedFile)
+            // Extract local path from file URL
+            var localPath = urlStr.startsWith("file:///") ? urlStr.substring(8) : urlStr
+            // Ensure Windows drive keeps colon (substring above preserves it)
+            if (!localPath.toLowerCase().endsWith(".ora")) localPath += ".ora"
+            lastOraPath = localPath
+            var saveOk = glCanvas.saveOraStrokesOnly("file:///" + lastOraPath.replace(/\\/g,"/"))
+            console.log(saveOk ? "Saved strokes-only ORA:" : "Failed strokes-only ORA", lastOraPath)
+        }
+    }
+
+    FileDialog {
+        id: saveStrokesDialog
+        title: "Save Strokes (transparent) as .ora"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["OpenRaster (*.ora)", "All files (*)"]
+        onAccepted: {
+            var urlStr = String(selectedFile)
+            var localPath = urlStr.startsWith("file:///") ? urlStr.substring(8) : urlStr
+            if (!localPath.toLowerCase().endsWith(".ora")) localPath += ".ora"
+            lastOraPath = localPath
+            var ok = glCanvas.saveOraStrokesOnly("file:///" + localPath.replace(/\\/g,"/"))
+            console.log(ok ? "Saved strokes-only ORA:" : "Failed save strokes-only ORA", localPath)
+        }
     }
 }
