@@ -213,7 +213,18 @@ void GLRenderer::render() {
     // Rebuild buffer from all committed strokes only if stroke count changed or forced
     int strokeCount = m_strokesSnap.size();
     if (m_rebuildVersion != strokeCount) {
-        m_buffer.fill(Qt::white);
+        if (m_canvas && m_canvas->hasBaseImage()) {
+            QImage base = m_canvas->baseImage();
+            if (base.size() != m_buffer.size()) {
+                base = base.scaled(m_buffer.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            }
+            if (base.format() != QImage::Format_RGBA8888) {
+                base = base.convertToFormat(QImage::Format_RGBA8888);
+            }
+            m_buffer = base; // replace background with base image
+        } else {
+            m_buffer.fill(Qt::white);
+        }
         for (const auto &stroke : m_strokesSnap) {
             drawStrokeInterpolated(stroke.points, stroke.color, stroke.size);
         }
