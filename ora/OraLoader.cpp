@@ -6,12 +6,14 @@
 #include <QTemporaryDir>
 #include <QProcess>
 #include <QDebug>
+#include <QRegularExpression>
 OraLoader::~OraLoader() = default;
 
 OraLoader :: OraLoader(QObject *parent) : QObject(parent) {}
 
 QString OraLoader :: loadOra(const QUrl &sourceUrl) {
     m_stackXml.clear();
+    m_rootDir.clear();
     if (!sourceUrl.isValid()) {
         qWarning() << "OraLoader: invalid url";
         return{};
@@ -35,6 +37,7 @@ QString OraLoader :: loadOra(const QUrl &sourceUrl) {
         return {};
     }
     QString outDir = m_tmpDir->path();
+    m_rootDir = outDir;
 
     // Expand-Archive only supports .zip extension. Copy the ORA to a temp .zip first.
     const QString zipPath = outDir + "/archive.zip";
@@ -65,6 +68,25 @@ QString OraLoader :: loadOra(const QUrl &sourceUrl) {
         qWarning() << "OraLoader: missing stack.xml";
     }
     return outDir;
+}
+
+QStringList OraLoader::layerImagePaths() const {
+    QStringList result;
+    if (m_stackXml.isEmpty()) return result;
+    QFile f(m_stackXml);
+    if (!f.open(QIODevice::ReadOnly)) return result;
+    const QString xml = QString::fromUtf8(f.readAll());
+    QRegularExpression re("src=\"([^\"]+)\"");
+    auto it = re.globalMatch(xml);
+    while (it.hasNext()) {
+        auto m = it.next();
+        QString rel = m.captured(1);
+        if (!rel.isEmpty()) {
+            QString abs = QDir(m_rootDir).absoluteFilePath(rel);
+            result << abs;
+        }
+    }
+    return result;
 }
 
 

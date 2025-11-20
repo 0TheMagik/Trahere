@@ -11,6 +11,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QUrl>
+#include <utility>
 #include <utility> // std::as_const
 
 namespace {
@@ -274,4 +275,74 @@ bool OraCreator::createOra(const QUrl &destinationUrl, int width, int height)
         local += ".ora";
     }
     return createOra(local, width, height);
+}
+
+bool OraCreator::saveOra(const QString &destinationPath, const QImage &layerImg)
+{
+    if (layerImg.isNull()) {
+        qWarning() << "saveOra: layer image is null";
+        return false;
+    }
+
+    QFileInfo destInfo(destinationPath);
+    const QString destDirPath = destInfo.absolutePath();
+    if (!destDirPath.isEmpty()) QDir().mkpath(destDirPath);
+
+    // Encode layer PNG
+    QByteArray layerPng;
+    {
+        QBuffer buf(&layerPng);
+        buf.open(QIODevice::WriteOnly);
+        if (!layerImg.save(&buf, "PNG")) {
+            qWarning() << "saveOra: failed encode layer PNG";
+            return false;
+        }
+    }
+
+    // Thumbnail (max 256)
+    QImage thumb = layerImg;
+    const int thumbMax = 256;
+    if (thumb.width() > thumbMax || thumb.height() > thumbMax) {
+        thumb = thumb.scaled(thumbMax, thumbMax, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    QByteArray thumbPng;
+    {
+        QBuffer buf(&thumbPng);
+        buf.open(QIODevice::WriteOnly);
+        thumb.save(&buf, "PNG");
+    }
+
+    // stack.xml (single layer)
+    QByteArray stackXml;
+    {
+        QTextStream out(&stackXml, QIODevice::WriteOnly);
+        out.setEncoding(QStringConverter::Utf8);
+        out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+        out << "<image w=\"" << layerImg.width() << "\" h=\"" << layerImg.height() << "\" version=\"0.0.1\">\n";
+        out << "  <stack>\n";
+        out << "    <layer name=\"Layer 0\" src=\"data/layer0.png\" x=\"0\" y=\"0\" opacity=\"1.0\" visible=\"true\"/>\n";
+        out << "  </stack>\n";
+        out << "</image>\n";
+    }
+
+    SimpleZipWriter zip;
+    if (!zip.open(destinationPath)) {
+        qWarning() << "saveOra: cannot open file" << destinationPath;
+        return false;
+    }
+    if (!zip.add(QStringLiteral("mimetype"), QByteArray("image/openraster"))) return false;
+    if (!zip.add(QStringLiteral("stack.xml"), stackXml)) return false;
+    if (!zip.add(QStringLiteral("data/layer0.png"), layerPng)) return false;
+    if (!zip.add(QStringLiteral("Thumbnails/thumbnail.png"), thumbPng)) return false;
+    if (!zip.close()) return false;
+    qWarning() << "saveOra: wrote" << destinationPath;
+    return true;
+}
+
+bool OraCreator::saveOra(const QUrl &destinationUrl, const QImage &layerImg)
+{
+    if (!destinationUrl.isValid()) return false;
+    QString local = destinationUrl.isLocalFile() ? destinationUrl.toLocalFile() : destinationUrl.toString();
+    if (!local.endsWith(".ora", Qt::CaseInsensitive)) local += ".ora";
+    return saveOra(local, layerImg);
 }

@@ -3,6 +3,7 @@
 #include <QVector2D>
 #include <QColor>
 #include <QList>
+#include <QImage>
 
 #include "BrushEngine.h"
 
@@ -33,6 +34,17 @@ public:
     Q_INVOKABLE bool undoLastStroke();
     Q_INVOKABLE bool removeStroke(int index);
     Q_INVOKABLE void clearAllStrokes();
+    // Load a base image (PNG/JPEG) that will be drawn under strokes
+    Q_INVOKABLE bool loadBaseImage(const QUrl &imageUrl);
+    // Save current composited canvas (base + strokes) to .ora
+    Q_INVOKABLE bool saveOra(const QUrl &destinationUrl);
+    // Save only the painted strokes (transparent background, no base image)
+    Q_INVOKABLE bool saveOraStrokesOnly(const QUrl &destinationUrl);
+    // Export composited image as QImage (for testing / other saves)
+    Q_INVOKABLE QImage compositedImage() const;
+
+    const QImage &baseImage() const { return m_baseImage; }
+    bool hasBaseImage() const { return !m_baseImage.isNull(); }
 
 signals:
     void brushColorChanged();
@@ -52,4 +64,5 @@ private:
     QColor m_brushColor;
     float m_brushSize;
     QVector2D m_cursorPos;
+    QImage m_baseImage;
 };
