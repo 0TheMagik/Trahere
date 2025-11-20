@@ -12,6 +12,8 @@ qt_add_executable(appTrahere
     main.cpp
     src/Canvas.h
     src/Canvas.cpp
+    src/Layer.h
+    src/Layer.cpp
     src/BrushEngine.cpp
     src/BrushEngine.h
     src/GLRenderer.cpp

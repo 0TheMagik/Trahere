@@ -1,5 +1,6 @@
 #include "GLRenderer.h"
 #include "Canvas.h"
+#include "Layer.h" // ensure complete type for method calls
 #include <QOpenGLFramebufferObjectFormat>
 #include <QQuickWindow>
 #include <cmath>
@@ -21,12 +22,29 @@ QOpenGLFramebufferObject *GLRenderer::createFramebufferObject(const QSize &size)
 void GLRenderer::synchronize(QQuickFramebufferObject *item) {
     // Called on render thread while GUI thread is blocked; safe to read item state
     auto *canvas = static_cast<Canvas*>(item);
-    // Snapshot brush engine state
-    m_isDrawingSnap = canvas->m_brush.isDrawing();
-    m_currentPointsSnap = canvas->m_brush.currentPoints();
-    m_currentColorSnap = canvas->m_brush.currentColor();
-    m_currentSizeSnap = canvas->m_brush.currentSize();
-    m_strokesSnap = canvas->m_brush.strokes();
+
+    // Aggregate committed strokes from all layers (in stacking order)
+    m_strokesSnap.clear();
+    const auto raw = canvas->rawLayers();
+    for (Layer* layer : raw) {
+        if (!layer || !layer->isVisible()) continue;
+        const auto &strokes = layer->engine().strokes();
+        for (const auto &s : strokes) {
+            m_strokesSnap.append(s);
+        }
+    }
+
+    // Snapshot active layer in-progress stroke if any
+    Layer* active = canvas->activeLayer();
+    if (active) {
+        m_isDrawingSnap = active->engine().isDrawing();
+        m_currentPointsSnap = active->engine().currentPoints();
+        m_currentColorSnap = active->engine().currentColor();
+        m_currentSizeSnap = active->engine().currentSize();
+    } else {
+        m_isDrawingSnap = false;
+        m_currentPointsSnap.clear();
+    }
 
     // Snapshot UI-related values
     m_cursorPosSnap = canvas->cursorPos();
