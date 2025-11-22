@@ -9,7 +9,7 @@ Window {
     id: canvasWindow
     visible: true
     flags: Qt.Window
-    modality: Qt.WindowModal
+    modality: Qt.NonModal
     width: initialWidth > 0 ? initialWidth : 800
     height: initialHeight > 0 ? initialHeight : 600
     title: "Canvas - Trahere"

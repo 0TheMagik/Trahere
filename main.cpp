@@ -6,8 +6,10 @@
 #include "src/Canvas.h"
 #include "src/Layer.h"
 #include <QQmlEngine>
+#include <QQmlContext>
 #include "ora/OraCreator.h"
 #include "ora/OraLoader.h"
+#include "recentfilesmanager.h"
 
 int main(int argc, char *argv[])
 {
@@ -26,6 +28,11 @@ int main(int argc, char *argv[])
     // Expose C++ types to QML under the Trahere 1.0 import
     qmlRegisterType<OraCreator>("Trahere", 1, 0, "OraCreator");
     qmlRegisterType<OraLoader>("Trahere", 1, 0, "OraLoader");
+    qmlRegisterType<RecentFilesModel>("Trahere", 1, 0, "RecentFilesModel");
+
+    // Create and set a singleton instance for easy access
+    RecentFilesModel *recentFilesModel = new RecentFilesModel(&engine);
+    engine.rootContext()->setContextProperty("recentFilesModel", recentFilesModel);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

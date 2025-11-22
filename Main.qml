@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import Trahere 1.0
+import QtQml
 
 ApplicationWindow {
     id: window
@@ -165,35 +166,257 @@ ApplicationWindow {
             color: "#31363b"
         }
 
-        // Search Bar
-        Rectangle {
-            width: 320
-            height: 44
-            color: "white"
-            radius: 22
-            border.color: "#bdc3c7"
-            border.width: 1
+        // Search Bar and Refresh Button Row
+        RowLayout {
+            spacing: 8
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
-                spacing: 8
+            // Search Bar
+            Rectangle {
+                Layout.preferredWidth: 320
+                Layout.preferredHeight: 44
+                color: "white"
+                radius: 22
+                border.color: "#bdc3c7"
+                border.width: 1
 
-                Text {
-                    text: "🔍"
-                    font.pixelSize: 18
-                    color: "#7f8c8d"
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 16
+                    anchors.rightMargin: 16
+                    spacing: 8
+
+                    Text {
+                        text: "🔍"
+                        font.pixelSize: 18
+                        color: "#7f8c8d"
+                    }
+
+                    TextField {
+                        id: searchField
+                        Layout.fillWidth: true
+                        placeholderText: "Search..."
+                        color: "#2c3e50"
+                        font.pixelSize: 14
+
+                        background: Rectangle {
+                            color: "transparent"
+                        }
+
+                        onTextChanged: {
+                            filterProxy.filterText = text
+                        }
+                    }
+                }
+            }
+
+            // Refresh Button (red box style)
+            Rectangle {
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 44
+                color: refreshState.isRefreshing ? "#DCDCDD" : "#DCDCDD"
+                radius: 4
+                border.color: refreshState.isRefreshing ? "#DCDCDD" : "#DCDCDD"
+                border.width: 2
+
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: !refreshState.isRefreshing
+                    onClicked: {
+                        console.log("Refreshing recent files...")
+                        refreshState.isRefreshing = true
+                        recentFilesModel.refresh()
+                    }
                 }
 
-                TextField {
-                    Layout.fillWidth: true
-                    placeholderText: "Search..."
-                    color: "#2c3e50"
-                    font.pixelSize: 14
+                Text {
+                    anchors.centerIn: parent
+                    text: refreshState.isRefreshing ? "⟳" : "⟳"
+                    font.pixelSize: 20
+                    color: "black"
+                    opacity: refreshState.isRefreshing ? 0.7 : 1.0
+                    
+                    // Rotating animation during refresh
+                    RotationAnimation on rotation {
+                        running: refreshState.isRefreshing
+                        from: 0
+                        to: 360
+                        duration: 1500
+                        loops: Animation.Infinite
+                    }
+                }
 
-                    background: Rectangle {
-                        color: "transparent"
+                states: [
+                    State {
+                        name: "hovered"
+                        when: mouseArea.containsMouse && !refreshState.isRefreshing
+                        PropertyChanges {
+                            target: parent
+                            color: "#DCDCDD"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+
+    // Filter proxy for search functionality
+    QtObject {
+        id: filterProxy
+        property string filterText: ""
+
+        function matches(fileName, filePath) {
+            if (filterText === "") return true
+            var lowerFilter = filterText.toLowerCase()
+            return fileName.toLowerCase().includes(lowerFilter) || 
+                   filePath.toLowerCase().includes(lowerFilter)
+        }
+    }
+
+    // Track refresh state
+    QtObject {
+        id: refreshState
+        property bool isRefreshing: false
+    }
+
+    // Connect to background scan finished signal
+    Connections {
+        target: recentFilesModel
+        function onBackgroundScanFinished() {
+            console.log("Background scan finished")
+            refreshState.isRefreshing = false
+        }
+    }
+
+    // Recent Files Section (flat style, not boxed)
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.topMargin: 180
+        anchors.leftMargin: 110
+        // Make recent files occupy the main workspace area (subtract margins)
+        width: parent.width - 220
+        height: parent.height - 240
+        color: "transparent"
+        border.width: 0
+        radius: 0
+        z: 1
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 4
+            spacing: 6
+
+            // Title (kept visually separate but not boxed)
+            Text {
+                text: "Recent Files"
+                font.pixelSize: 16
+                font.bold: true
+                color: "#31363b"
+                anchors.left: parent.left
+                anchors.leftMargin: 8
+            }
+
+            // ListView for recent files (flat rows with separators)
+            ListView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                model: recentFilesModel
+                clip: true
+                spacing: 0
+
+                delegate: Item {
+                    width: ListView.view.width
+                    height: visible ? 52 : 0
+                    visible: filterProxy.matches(model.fileName, model.filePath)
+
+                    MouseArea {
+                        id: mouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            console.log("Opening:", model.filePath)
+                            let dirPath = oraLoader.loadOra(model.filePath)
+                            if (dirPath.length === 0) {
+                                console.log("Failed to load .ora")
+                                return
+                            }
+                            console.log("Extracted .ora to temp:", dirPath, "stack:", oraLoader.stackXmlPath())
+                            function pathToUrl(p) { return "file:///" + p.replace(/\\\\/g, "/") }
+                            var merged = pathToUrl(dirPath + "/mergedimage.png")
+                            var layer0 = pathToUrl(dirPath + "/data/layer0.png")
+
+                            var comp = Qt.createComponent("CanvasWindow.qml")
+                            if (comp.status === Component.Ready) {
+                                var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged })
+                                if (win && win.imageSource === "" ) {
+                                    win.imageSource = layer0
+                                }
+                            } else {
+                                console.log("Canvas component not ready:", comp.status, comp.errorString())
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Text {
+                                text: model.fileName
+                                font.pixelSize: 13
+                                font.bold: true
+                                color: mouseArea.containsMouse ? "#222222" : "#31363b"
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                text: model.filePath
+                                font.pixelSize: 10
+                                color: "#7f8c8d"
+                                elide: Text.ElideMiddle
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        Text {
+                            text: model.dateModified
+                            font.pixelSize: 10
+                            color: "#95a5a6"
+                            horizontalAlignment: Text.AlignRight
+                        }
+                    }
+
+                    // Separator line
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 1
+                        color: "#e9e9e9"
+                    }
+                }
+
+                ScrollBar.vertical: ScrollBar { active: true }
+
+                // Empty state overlay
+                Rectangle {
+                    anchors.fill: parent
+                    color: "transparent"
+                    visible: recentFilesModel.rowCount() === 0
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "No recent files"
+                        color: "#bfc4c6"
+                        font.pixelSize: 12
                     }
                 }
             }
@@ -249,8 +472,8 @@ ApplicationWindow {
         title: "Create new document - Trahere"
         width: 650
         height: 700
-        modality: Qt.ApplicationModal
-        flags: Qt.Dialog
+        modality: Qt.NonModal
+        flags: Qt.Window
         color: "#3c3f41"
 
         // Custom Title Bar for Dragging

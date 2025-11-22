@@ -4,7 +4,7 @@ project(Trahere VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2)
+find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Concurrent)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -22,6 +22,8 @@ qt_add_executable(appTrahere
     ora/OraCreator.cpp
     ora/OraLoader.h
     ora/OraLoader.cpp
+    recentfilesmanager.h
+    recentfilesmanager.cpp
 )
 
 qt_add_qml_module(appTrahere
@@ -51,6 +53,7 @@ target_link_libraries(appTrahere
     PRIVATE
         Qt6::Quick
         Qt6::QuickControls2
+    Qt6::Concurrent
 )
 
 include(GNUInstallDirs)
