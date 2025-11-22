@@ -156,7 +156,7 @@ void Canvas::setActiveLayerIndex(int idx) {
 Layer* Canvas::activeLayer() const {
     if (m_activeLayerIndex < 0 || m_activeLayerIndex >= m_layers.size()) return nullptr;
     return m_layers[m_activeLayerIndex];
-  
+}
 bool Canvas::loadBaseImage(const QUrl &imageUrl) {
     if (!imageUrl.isValid()) return false;
     QString local = imageUrl.isLocalFile() ? imageUrl.toLocalFile() : imageUrl.toString();
@@ -189,15 +189,17 @@ QImage Canvas::compositedImage() const {
     // Simple stroke rendering using QPainter path (does not perfectly match GL stamping but acceptable)
     QPainter painter(&buffer);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    for (const auto &stroke : m_brush.strokes()) {
-        if (stroke.points.isEmpty()) continue;
-        QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-        painter.setPen(pen);
-        QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
-        for (int i=1;i<stroke.points.size();++i) {
-            path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+    if (activeLayer()) {
+        for (const auto &stroke : activeLayer()->engine().strokes()) {
+            if (stroke.points.isEmpty()) continue;
+            QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+            painter.setPen(pen);
+            QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
+            for (int i=1;i<stroke.points.size();++i) {
+                path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            }
+            painter.drawPath(path);
         }
-        painter.drawPath(path);
     }
     painter.end();
     return buffer;
@@ -231,15 +233,17 @@ bool Canvas::saveOraStrokesOnly(const QUrl &destinationUrl) {
     }
     QPainter painter(&buffer);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    for (const auto &stroke : m_brush.strokes()) {
-        if (stroke.points.isEmpty()) continue;
-        QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-        painter.setPen(pen);
-        QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
-        for (int i=1;i<stroke.points.size();++i) {
-            path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+    if (activeLayer()) {
+        for (const auto &stroke : activeLayer()->engine().strokes()) {
+            if (stroke.points.isEmpty()) continue;
+            QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+            painter.setPen(pen);
+            QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
+            for (int i=1;i<stroke.points.size();++i) {
+                path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            }
+            painter.drawPath(path);
         }
-        painter.drawPath(path);
     }
     painter.end();
     OraCreator creator;

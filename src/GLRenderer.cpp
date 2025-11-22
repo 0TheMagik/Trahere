@@ -25,12 +25,13 @@ void GLRenderer::synchronize(QQuickFramebufferObject *item) {
 
     // Aggregate committed strokes from all layers (in stacking order)
     m_strokesSnap.clear();
-    const auto raw = canvas->rawLayers();
-    for (Layer* layer : raw) {
+    const QList<Layer*> &raw = canvas->rawLayers(); // avoid QList copy (clazy range-loop-detach)
+    for (int li = 0; li < raw.size(); ++li) {
+        Layer* layer = raw.at(li);
         if (!layer || !layer->isVisible()) continue;
-        const auto &strokes = layer->engine().strokes();
-        for (const auto &s : strokes) {
-            m_strokesSnap.append(s);
+        const QList<BrushStroke> &strokes = layer->engine().strokes();
+        for (int si = 0; si < strokes.size(); ++si) {
+            m_strokesSnap.append(strokes.at(si));
         }
     }
 
@@ -243,7 +244,8 @@ void GLRenderer::render() {
         } else {
             m_buffer.fill(Qt::white);
         }
-        for (const auto &stroke : m_strokesSnap) {
+        for (int i = 0; i < m_strokesSnap.size(); ++i) {
+            const BrushStroke &stroke = m_strokesSnap.at(i);
             drawStrokeInterpolated(stroke.points, stroke.color, stroke.size);
         }
         m_rebuildVersion = strokeCount;

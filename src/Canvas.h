@@ -38,7 +38,7 @@ public:
     int layerCount() const { return m_layers.size(); }
     int activeLayerIndex() const { return m_activeLayerIndex; }
     void setActiveLayerIndex(int idx);
-    QList<Layer*> rawLayers() const { return m_layers; }
+    const QList<Layer*>& rawLayers() const { return m_layers; }
     QQmlListProperty<Layer> layers();
         // QQmlListProperty helpers (use qsizetype as required by Qt6)
         static qsizetype layersCountFunc(QQmlListProperty<Layer>* prop);
