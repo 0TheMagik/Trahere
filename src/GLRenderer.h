@@ -5,6 +5,7 @@
 #include <QImage>
 // Needed for BrushStroke definition used in snapshots
 #include "BrushEngine.h"
+#include <QList>
 
 class Canvas;
 
@@ -28,7 +29,7 @@ private:
     bool m_bufferDirty = false; // track whether CPU buffer changed and needs GPU upload
 
     // Snapshots synchronized from GUI thread to render thread
-    QList<BrushStroke> m_strokesSnap;
+    QList<BrushStroke> m_strokesSnap; // aggregated strokes from all layers
     QList<QVector2D> m_currentPointsSnap;
     QColor m_currentColorSnap;
     float m_currentSizeSnap = 0.0f;

@@ -442,14 +442,14 @@ ApplicationWindow {
                 var merged = pathToUrl(dirPath + "/mergedimage.png")
                 var layer0 = pathToUrl(dirPath + "/data/layer0.png")
 
+                // Derive local path of opened ORA (strip file:/// prefix) for auto-save target
+                var openedUrl = String(fileDialog.selectedFile)
+                var localOpenedPath = openedUrl.startsWith("file:///") ? openedUrl.substring(8) : openedUrl
+
                 // Create a preview window using CanvasWindow
                 var comp = Qt.createComponent("CanvasWindow.qml")
                 if (comp.status === Component.Ready) {
-                    var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged })
-                    // If merged image not found, fallback to layer0
-                    if (win && win.imageSource === "" ) {
-                        win.imageSource = layer0
-                    }
+                    var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, lastOraPath: localOpenedPath })
                 } else {
                     console.log("Canvas component not ready:", comp.status, comp.errorString())
                 }
@@ -1245,7 +1245,9 @@ ApplicationWindow {
                 createDocWindow.close()
                 var comp = Qt.createComponent("CanvasWindow.qml")
                 if (comp.status === Component.Ready) {
-                    var win = comp.createObject(window, { initialWidth: pixelWidth, initialHeight: pixelHeight })
+                    var createdUrl = String(saveOraDialog.selectedFile)
+                    var localCreatedPath = createdUrl.startsWith("file:///") ? createdUrl.substring(8) : createdUrl
+                    var win = comp.createObject(window, { initialWidth: pixelWidth, initialHeight: pixelHeight, lastOraPath: localCreatedPath })
                     if (!win) console.log("Failed to create CanvasWindow:", comp.errorString())
                 } else {
                     console.log("Canvas component not ready:", comp.status, comp.errorString())

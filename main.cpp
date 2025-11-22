@@ -4,6 +4,7 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include "src/Canvas.h"
+#include "src/Layer.h"
 #include <QQmlEngine>
 #include <QQmlContext>
 #include "ora/OraCreator.h"
@@ -22,6 +23,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
 
     qmlRegisterType<Canvas>("Trahere", 1, 0, "Canvas");
+    qmlRegisterType<Layer>("Trahere", 1, 0, "Layer");
 
     // Expose C++ types to QML under the Trahere 1.0 import
     qmlRegisterType<OraCreator>("Trahere", 1, 0, "OraCreator");
