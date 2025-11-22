@@ -253,3 +253,104 @@ bool Canvas::saveOraStrokesOnly(const QUrl &destinationUrl) {
     }
     return ok;
 }
+
+bool Canvas::saveOraAllLayers(const QUrl &destinationUrl) {
+    if (!destinationUrl.isValid()) return false;
+    // Determine target size (use base image size if available else canvas item size else fallback)
+    QSize targetSize = !m_baseImage.isNull() ? m_baseImage.size() : QSize(int(width()), int(height()));
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) targetSize = QSize(512, 512);
+
+    QList<QImage> layerImages; // first element will be top-most for ORA
+    QStringList layerNames;
+    QList<bool> visibilityFlags;
+
+    // Build per-layer images. Internal m_layers is assumed bottom->top (new appended layers over earlier ones)
+    // For ORA we need top-most first, so iterate reversed.
+    for (int li = m_layers.size() - 1; li >= 0; --li) {
+        Layer* layer = m_layers.at(li);
+        if (!layer) continue;
+        QImage img(targetSize, QImage::Format_RGBA8888);
+        img.fill(Qt::transparent);
+        QPainter painter(&img);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const auto &strokes = layer->engine().strokes();
+        for (const auto &stroke : strokes) {
+            if (stroke.points.isEmpty()) continue;
+            QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+            painter.setPen(pen);
+            QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
+            for (int i=1;i<stroke.points.size();++i) {
+                path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            }
+            painter.drawPath(path);
+        }
+        painter.end();
+        layerImages.append(img);
+        layerNames.append(layer->name());
+        visibilityFlags.append(layer->isVisible());
+    }
+
+    // Optionally include base image as bottom-most layer (appears last in stack.xml, so push back now)
+    if (!m_baseImage.isNull()) {
+        QImage base = m_baseImage;
+        if (base.size() != targetSize) {
+            base = base.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        }
+        // Base image should be bottom layer => appears last in stack.xml; since we added top-first previously,
+        // we append it now so it is logically at the end of <stack>.
+        layerImages.append(base);
+        layerNames.append(QStringLiteral("Base"));
+        visibilityFlags.append(true);
+    }
+
+    if (layerImages.isEmpty()) {
+        qWarning() << "Canvas.saveOraAllLayers: no layers to save";
+        return false;
+    }
+
+    // Debug listing
+    qWarning() << "Canvas.saveOraAllLayers: preparing" << layerImages.size() << "layers";
+    for (int i=0;i<layerNames.size();++i) {
+        qWarning() << "  Layer" << i << ": name=" << layerNames[i] << " visible=" << visibilityFlags[i];
+    }
+
+    OraCreator creator;
+    bool ok = creator.saveOraMulti(destinationUrl, layerImages, layerNames, visibilityFlags);
+    if (!ok) {
+        qWarning() << "Canvas.saveOraAllLayers: failed" << destinationUrl;
+    }
+    return ok;
+}
+
+bool Canvas::loadOraLayers(const QStringList &layerImagePaths) {
+    if (layerImagePaths.isEmpty()) return false;
+    // Clear current layers
+    while (!m_layers.isEmpty()) {
+        Layer* l = m_layers.takeLast();
+        if (l) l->deleteLater();
+    }
+    m_activeLayerIndex = -1;
+    emit layerCountChanged();
+    emit activeLayerIndexChanged();
+
+    // According to spec, first layer in stack.xml is top-most.
+    // We need to append bottom-first so stacking in m_layers is bottom->top.
+    for (int i = layerImagePaths.size() - 1; i >= 0; --i) {
+        const QString &path = layerImagePaths.at(i);
+        QImage img(path);
+        if (img.isNull()) {
+            qWarning() << "Canvas.loadOraLayers: failed to load layer image" << path;
+            continue;
+        }
+        Layer* layer = new Layer(const_cast<Canvas*>(this));
+        layer->setName(QString("Layer %1").arg(m_layers.size()));
+        layer->setRaster(img.convertToFormat(QImage::Format_RGBA8888));
+        m_layers.append(layer);
+    }
+    emit layerCountChanged();
+    if (!m_layers.isEmpty()) {
+        setActiveLayerIndex(m_layers.size() - 1); // top layer active
+    }
+    update();
+    return !m_layers.isEmpty();
+}

@@ -11,6 +11,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QUrl>
+#include <QPainter>
 #include <utility>
 #include <utility> // std::as_const
 
@@ -214,15 +215,16 @@ bool OraCreator::createOra(const QString &destinationPath, int width, int height
         thumb.save(&buf, "PNG");
     }
 
-    // stack.xml
+    // stack.xml (single empty background layer). Use spec attribute names: visibility.
     QByteArray stackXml;
     {
         QTextStream out(&stackXml, QIODevice::WriteOnly);
         out.setEncoding(QStringConverter::Utf8);
         out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-        out << "<image w=\"" << w << "\" h=\"" << h << "\" version=\"0.0.1\">\n";
-        out << "  <stack>\n";
-        out << "    <layer name=\"Background\" src=\"data/layer0.png\" x=\"0\" y=\"0\" opacity=\"1.0\" visible=\"true\"/>\n";
+        out << "<image w=\"" << w << "\" h=\"" << h << "\" version=\"0.0.5\">\n";
+        out << "  <stack>\n"; // root stack, top-most layer first
+        // With only one layer, it is both top and bottom.
+        out << "    <layer name=\"Background\" src=\"data/layer0.png\" x=\"0\" y=\"0\" opacity=\"1.0\" visibility=\"visible\" composite-op=\"svg:src-over\"/>\n";
         out << "  </stack>\n";
         out << "</image>\n";
     }
@@ -312,15 +314,15 @@ bool OraCreator::saveOra(const QString &destinationPath, const QImage &layerImg)
         thumb.save(&buf, "PNG");
     }
 
-    // stack.xml (single layer)
+    // stack.xml (single layer) - use visibility attribute
     QByteArray stackXml;
     {
         QTextStream out(&stackXml, QIODevice::WriteOnly);
         out.setEncoding(QStringConverter::Utf8);
         out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-        out << "<image w=\"" << layerImg.width() << "\" h=\"" << layerImg.height() << "\" version=\"0.0.1\">\n";
+        out << "<image w=\"" << layerImg.width() << "\" h=\"" << layerImg.height() << "\" version=\"0.0.5\">\n";
         out << "  <stack>\n";
-        out << "    <layer name=\"Layer 0\" src=\"data/layer0.png\" x=\"0\" y=\"0\" opacity=\"1.0\" visible=\"true\"/>\n";
+        out << "    <layer name=\"Layer 0\" src=\"data/layer0.png\" x=\"0\" y=\"0\" opacity=\"1.0\" visibility=\"visible\" composite-op=\"svg:src-over\"/>\n";
         out << "  </stack>\n";
         out << "</image>\n";
     }
@@ -345,4 +347,120 @@ bool OraCreator::saveOra(const QUrl &destinationUrl, const QImage &layerImg)
     QString local = destinationUrl.isLocalFile() ? destinationUrl.toLocalFile() : destinationUrl.toString();
     if (!local.endsWith(".ora", Qt::CaseInsensitive)) local += ".ora";
     return saveOra(local, layerImg);
+}
+
+bool OraCreator::saveOraMulti(const QString &destinationPath,
+                              const QList<QImage> &layerImages,
+                              const QStringList &layerNames,
+                              const QList<bool> &visibilityFlags)
+{
+    if (layerImages.isEmpty()) {
+        qWarning() << "saveOraMulti: no layers provided";
+        return false;
+    }
+    if (layerImages.size() != layerNames.size() || layerImages.size() != visibilityFlags.size()) {
+        qWarning() << "saveOraMulti: size mismatch";
+        return false;
+    }
+    // Validate dimensions (all layers must share size)
+    const int w = layerImages.first().width();
+    const int h = layerImages.first().height();
+    for (const QImage &img : layerImages) {
+        if (img.isNull() || img.width() != w || img.height() != h) {
+            qWarning() << "saveOraMulti: layer image invalid or size mismatch";
+            return false;
+        }
+    }
+
+    // Prepare PNG data for each layer
+    struct LayerData { QByteArray png; QString name; bool visible; int index; };
+    QVector<LayerData> data;
+    data.reserve(layerImages.size());
+    const int layerCount = layerImages.size();
+    // Input is assumed TOP-FIRST (first element is top layer). We will number files top-first as well
+    // (layer0.png is top) to reduce ambiguity when inspecting archive manually.
+    for (int i = 0; i < layerCount; ++i) {
+        QByteArray png;
+        QBuffer buf(&png);
+        buf.open(QIODevice::WriteOnly);
+        if (!layerImages[i].save(&buf, "PNG")) {
+            qWarning() << "saveOraMulti: failed to encode layer" << i;
+            return false;
+        }
+        int fileIndex = i; // top-first numbering: 0 is top layer
+        data.push_back({png,
+                        layerNames[i].isEmpty() ? QString("Layer %1").arg(fileIndex) : layerNames[i],
+                        visibilityFlags[i],
+                        fileIndex});
+    }
+
+    // Composite thumbnail from all visible layers (simple painter blend)
+    QImage composite(w, h, QImage::Format_RGBA8888);
+    composite.fill(Qt::transparent);
+    {
+        QPainter p(&composite);
+        // Bottom-most layer is last in list (since first is top). Paint reverse order.
+        for (int i = data.size() - 1; i >= 0; --i) {
+            if (!data[i].visible) continue;
+            p.drawImage(0, 0, layerImages[i]);
+        }
+        p.end();
+    }
+    // Scale thumbnail down to <=256
+    const int thumbMax = 256;
+    QImage thumb = composite;
+    if (thumb.width() > thumbMax || thumb.height() > thumbMax) {
+        thumb = thumb.scaled(thumbMax, thumbMax, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    QByteArray thumbPng;
+    {
+        QBuffer buf(&thumbPng);
+        buf.open(QIODevice::WriteOnly);
+        thumb.save(&buf, "PNG");
+    }
+
+    // Build stack.xml (top-most layer first per spec). We number files layer0.png=top.
+    QByteArray stackXml;
+    {
+        QTextStream out(&stackXml, QIODevice::WriteOnly);
+        out.setEncoding(QStringConverter::Utf8);
+        out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+        out << "<image w=\"" << w << "\" h=\"" << h << "\" version=\"0.0.5\">\n";
+        out << "  <stack>\n";
+        for (int i = 0; i < data.size(); ++i) { // i=0 is top layer
+            const LayerData &ld = data[i];
+            out << "    <layer name=\"" << ld.name << "\" src=\"data/layer" << ld.index
+                << ".png\" x=\"0\" y=\"0\" opacity=\"1.0\" visibility=\""
+                << (ld.visible ? "visible" : "hidden") << "\" composite-op=\"svg:src-over\"/>\n"; // spec-compliant visibility values
+        }
+        out << "  </stack>\n";
+        out << "</image>\n";
+    }
+
+    SimpleZipWriter zip;
+    if (!zip.open(destinationPath)) {
+        qWarning() << "saveOraMulti: cannot open destination" << destinationPath;
+        return false;
+    }
+    if (!zip.add(QStringLiteral("mimetype"), QByteArray("image/openraster"))) return false;
+    if (!zip.add(QStringLiteral("stack.xml"), stackXml)) return false;
+    for (const LayerData &ld : data) {
+        const QString fileName = QString("data/layer%1.png").arg(ld.index);
+        if (!zip.add(fileName, ld.png)) return false;
+    }
+    if (!zip.add(QStringLiteral("Thumbnails/thumbnail.png"), thumbPng)) return false;
+    if (!zip.close()) return false;
+    qWarning() << "saveOraMulti: wrote" << destinationPath << "with" << data.size() << "layers";
+    return true;
+}
+
+bool OraCreator::saveOraMulti(const QUrl &destinationUrl,
+                              const QList<QImage> &layerImages,
+                              const QStringList &layerNames,
+                              const QList<bool> &visibilityFlags)
+{
+    if (!destinationUrl.isValid()) return false;
+    QString local = destinationUrl.isLocalFile() ? destinationUrl.toLocalFile() : destinationUrl.toString();
+    if (!local.endsWith(".ora", Qt::CaseInsensitive)) local += ".ora";
+    return saveOraMulti(local, layerImages, layerNames, visibilityFlags);
 }

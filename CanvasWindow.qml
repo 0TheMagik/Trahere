@@ -21,6 +21,8 @@ Window {
     property url imageSource: ""
     // Fallback layer image (e.g., data/layer0.png) if mergedimage.png not present
     property url fallbackImageSource: ""
+    // Optional: list of ORA layer image absolute paths (top-first)
+    property var layerPaths: []
     // Stores local filesystem path (without file:/// prefix)
     property string lastOraPath: ""
 
@@ -57,17 +59,21 @@ Window {
                                 console.log("No ORA path set; ignoring Save")
                                 return
                             }
-                            var ok = glCanvas.saveOraStrokesOnly("file:///" + lastOraPath.replace(/\\/g,"/"))
-                            console.log(ok ? "Saved strokes-only ORA:" : "Failed strokes-only save", lastOraPath)
+                            var ok = glCanvas.saveOraAllLayers("file:///" + lastOraPath.replace(/\\/g,"/"))
+                            console.log(ok ? "Saved ALL layers ORA:" : "Failed multi-layer save", lastOraPath)
                         }
                     }
                     MenuItem {
                         text: "Save As..."
-                        onTriggered: saveOraDialog.open()
+                        onTriggered: saveAllLayersDialog.open()
                     }
                     MenuItem {
                         text: "Save Strokes Only..."
                         onTriggered: saveStrokesDialog.open()
+                    }
+                    MenuItem {
+                        text: "Save All Layers As..."
+                        onTriggered: saveAllLayersDialog.open()
                     }
                     MenuSeparator {}
                     MenuItem { text: "Export..." }
@@ -286,7 +292,9 @@ Window {
                         brushSize: 5
                         z: 1
                         Component.onCompleted: {
-                            if (canvasWindow.imageSource !== "") {
+                            if (canvasWindow.layerPaths && canvasWindow.layerPaths.length > 0) {
+                                glCanvas.loadOraLayers(canvasWindow.layerPaths)
+                            } else if (canvasWindow.imageSource !== "") {
                                 if (!glCanvas.loadBaseImage(canvasWindow.imageSource) && canvasWindow.fallbackImageSource !== "") {
                                     glCanvas.loadBaseImage(canvasWindow.fallbackImageSource)
                                 }
@@ -318,19 +326,17 @@ Window {
     }
 
     FileDialog {
-        id: saveOraDialog
-        title: "Save Canvas as .ora"
+        id: saveAllLayersDialog
+        title: "Save All Layers as .ora"
         fileMode: FileDialog.SaveFile
         nameFilters: ["OpenRaster (*.ora)", "All files (*)"]
         onAccepted: {
             var urlStr = String(selectedFile)
-            // Extract local path from file URL
             var localPath = urlStr.startsWith("file:///") ? urlStr.substring(8) : urlStr
-            // Ensure Windows drive keeps colon (substring above preserves it)
             if (!localPath.toLowerCase().endsWith(".ora")) localPath += ".ora"
             lastOraPath = localPath
-            var saveOk = glCanvas.saveOraStrokesOnly("file:///" + lastOraPath.replace(/\\/g,"/"))
-            console.log(saveOk ? "Saved strokes-only ORA:" : "Failed strokes-only ORA", lastOraPath)
+            var ok = glCanvas.saveOraAllLayers("file:///" + localPath.replace(/\\/g,"/"))
+            console.log(ok ? "Saved ALL layers ORA:" : "Failed ALL layers ORA", localPath)
         }
     }
 

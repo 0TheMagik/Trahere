@@ -3,6 +3,7 @@
 #include "Layer.h" // ensure complete type for method calls
 #include <QOpenGLFramebufferObjectFormat>
 #include <QQuickWindow>
+#include <QPainter>
 #include <cmath>
 #include <algorithm>
 
@@ -23,16 +24,17 @@ void GLRenderer::synchronize(QQuickFramebufferObject *item) {
     // Called on render thread while GUI thread is blocked; safe to read item state
     auto *canvas = static_cast<Canvas*>(item);
 
-    // Aggregate committed strokes from all layers (in stacking order)
-    m_strokesSnap.clear();
-    const QList<Layer*> &raw = canvas->rawLayers(); // avoid QList copy (clazy range-loop-detach)
+    // Snapshot per-layer content in stacking order (bottom -> top)
+    m_layersSnap.clear();
+    const QList<Layer*> &raw = canvas->rawLayers();
     for (int li = 0; li < raw.size(); ++li) {
         Layer* layer = raw.at(li);
-        if (!layer || !layer->isVisible()) continue;
-        const QList<BrushStroke> &strokes = layer->engine().strokes();
-        for (int si = 0; si < strokes.size(); ++si) {
-            m_strokesSnap.append(strokes.at(si));
-        }
+        if (!layer) continue;
+        LayerSnap snap;
+        snap.visible = layer->isVisible();
+        if (snap.visible && layer->hasRaster()) snap.raster = layer->raster();
+        snap.strokes = layer->engine().strokes();
+        m_layersSnap.append(std::move(snap));
     }
 
     // Snapshot active layer in-progress stroke if any
@@ -230,8 +232,16 @@ void GLRenderer::render() {
     };
 
     // Rebuild buffer from all committed strokes only if stroke count changed or forced
-    int strokeCount = m_strokesSnap.size();
-    if (m_rebuildVersion != strokeCount) {
+    // Compute a simple version stamp from visible raster count + total strokes
+    int totalStrokes = 0;
+    int rasterCount = 0;
+    for (const auto &ls : m_layersSnap) {
+        totalStrokes += ls.strokes.size();
+        if (ls.visible && !ls.raster.isNull()) ++rasterCount;
+    }
+    int contentVersion = totalStrokes + rasterCount * 1000003;
+    if (m_rebuildVersion != contentVersion) {
+        // Start with background (white or base image if set)
         if (m_canvas && m_canvas->hasBaseImage()) {
             QImage base = m_canvas->baseImage();
             if (base.size() != m_buffer.size()) {
@@ -240,15 +250,31 @@ void GLRenderer::render() {
             if (base.format() != QImage::Format_RGBA8888) {
                 base = base.convertToFormat(QImage::Format_RGBA8888);
             }
-            m_buffer = base; // replace background with base image
+            m_buffer = base;
         } else {
             m_buffer.fill(Qt::white);
         }
-        for (int i = 0; i < m_strokesSnap.size(); ++i) {
-            const BrushStroke &stroke = m_strokesSnap.at(i);
-            drawStrokeInterpolated(stroke.points, stroke.color, stroke.size);
+        // Draw per layer: raster first, then its strokes
+        QPainter imgPainter(&m_buffer);
+        for (const auto &ls : m_layersSnap) {
+            if (!ls.visible) continue;
+            if (!ls.raster.isNull()) {
+                QImage r = ls.raster;
+                if (r.size() != m_buffer.size()) {
+                    r = r.scaled(m_buffer.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                }
+                imgPainter.drawImage(0, 0, r);
+            }
+            // Draw this layer's strokes
+            imgPainter.end(); // ensure no pending state before direct pixel ops
+            for (int i = 0; i < ls.strokes.size(); ++i) {
+                const BrushStroke &stroke = ls.strokes.at(i);
+                drawStrokeInterpolated(stroke.points, stroke.color, stroke.size);
+            }
+            imgPainter.begin(&m_buffer);
         }
-        m_rebuildVersion = strokeCount;
+        imgPainter.end();
+        m_rebuildVersion = contentVersion;
         m_bufferDirty = true;
     }
     // Add in-progress stroke on top (not yet committed)

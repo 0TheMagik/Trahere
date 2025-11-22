@@ -61,8 +61,14 @@ public:
     Q_INVOKABLE bool saveOra(const QUrl &destinationUrl);
     // Save only the painted strokes (transparent background, no base image)
     Q_INVOKABLE bool saveOraStrokesOnly(const QUrl &destinationUrl);
+    // Save all layers individually into a multi-layer .ora (OpenRaster) file.
+    // Each layer becomes data/layerN.png with N matching its index in internal list.
+    // Layer stacking: top-most layer first in stack.xml (reverse of storage order if appended).
+    Q_INVOKABLE bool saveOraAllLayers(const QUrl &destinationUrl);
     // Export composited image as QImage (for testing / other saves)
     Q_INVOKABLE QImage compositedImage() const;
+    // Load raster layers from extracted ORA layer image paths (absolute).
+    Q_INVOKABLE bool loadOraLayers(const QStringList &layerImagePaths);
 
     const QImage &baseImage() const { return m_baseImage; }
     bool hasBaseImage() const { return !m_baseImage.isNull(); }

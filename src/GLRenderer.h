@@ -24,12 +24,17 @@ private:
     bool m_initialized = false;
     QImage m_buffer; // CPU canvas buffer
     GLuint m_texture = 0; // GL texture backing the buffer
-    int m_rebuildVersion = -1; // track stroke count processed
+    int m_rebuildVersion = -1; // track content version processed
     QSize m_textureSize; // track texture allocation size
     bool m_bufferDirty = false; // track whether CPU buffer changed and needs GPU upload
 
     // Snapshots synchronized from GUI thread to render thread
-    QList<BrushStroke> m_strokesSnap; // aggregated strokes from all layers
+    struct LayerSnap {
+        QImage raster;                // optional raster image of this layer
+        QList<BrushStroke> strokes;   // committed strokes for this layer
+        bool visible = true;
+    };
+    QList<LayerSnap> m_layersSnap;    // stacking order: bottom -> top
     QList<QVector2D> m_currentPointsSnap;
     QColor m_currentColorSnap;
     float m_currentSizeSnap = 0.0f;

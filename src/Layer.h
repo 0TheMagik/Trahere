@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QString>
+#include <QImage>
 #include "BrushEngine.h"
 
 class Layer : public QObject {
@@ -20,6 +21,12 @@ public:
     BrushEngine& engine() { return m_engine; }
     const BrushEngine& engine() const { return m_engine; }
 
+    // Optional raster content for this layer (used when importing ORA)
+    bool hasRaster() const { return !m_raster.isNull(); }
+    const QImage& raster() const { return m_raster; }
+    void setRaster(const QImage &img) { m_raster = img; }
+    void clearRaster() { m_raster = QImage(); }
+
 signals:
     void nameChanged();
     void visibilityChanged();
@@ -28,4 +35,5 @@ private:
     QString m_name;
     bool m_visible;
     BrushEngine m_engine;
+    QImage m_raster;
 };

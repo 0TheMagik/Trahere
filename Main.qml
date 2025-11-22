@@ -345,13 +345,11 @@ ApplicationWindow {
                             function pathToUrl(p) { return "file:///" + p.replace(/\\\\/g, "/") }
                             var merged = pathToUrl(dirPath + "/mergedimage.png")
                             var layer0 = pathToUrl(dirPath + "/data/layer0.png")
+                            var paths = oraLoader.layerImagePaths()
 
                             var comp = Qt.createComponent("CanvasWindow.qml")
                             if (comp.status === Component.Ready) {
-                                var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged })
-                                if (win && win.imageSource === "" ) {
-                                    win.imageSource = layer0
-                                }
+                                var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, layerPaths: paths })
                             } else {
                                 console.log("Canvas component not ready:", comp.status, comp.errorString())
                             }
@@ -441,6 +439,7 @@ ApplicationWindow {
                 function pathToUrl(p) { return "file:///" + p.replace(/\\\\/g, "/") }
                 var merged = pathToUrl(dirPath + "/mergedimage.png")
                 var layer0 = pathToUrl(dirPath + "/data/layer0.png")
+                var paths = oraLoader.layerImagePaths()
 
                 // Derive local path of opened ORA (strip file:/// prefix) for auto-save target
                 var openedUrl = String(fileDialog.selectedFile)
@@ -449,7 +448,7 @@ ApplicationWindow {
                 // Create a preview window using CanvasWindow
                 var comp = Qt.createComponent("CanvasWindow.qml")
                 if (comp.status === Component.Ready) {
-                    var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, lastOraPath: localOpenedPath })
+                    var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, lastOraPath: localOpenedPath, layerPaths: paths })
                 } else {
                     console.log("Canvas component not ready:", comp.status, comp.errorString())
                 }
