@@ -5,8 +5,10 @@
 #include <QList>
 #include <QQmlListProperty>
 #include <QImage>
+#include <memory>
 
-#include "BrushEngine.h"
+#include "ToolManager.h"
+#include "EraserTool.h"
 
 class GLRenderer;
 
@@ -21,9 +23,20 @@ class Canvas : public QQuickFramebufferObject {
     Q_PROPERTY(int layerCount READ layerCount NOTIFY layerCountChanged)
     Q_PROPERTY(int activeLayerIndex READ activeLayerIndex WRITE setActiveLayerIndex NOTIFY activeLayerIndexChanged)
     Q_PROPERTY(QQmlListProperty<Layer> layers READ layers NOTIFY layerCountChanged)
+    // Optional: expose active tool as integer (matches ToolKind ordinal)
+    Q_PROPERTY(int activeTool READ activeTool NOTIFY activeToolChanged)
+    // Expose derived state for UI enablement
+    Q_PROPERTY(bool hasContent READ hasContent NOTIFY strokeCountChanged)
+    Q_PROPERTY(bool canUndo READ canUndo NOTIFY strokeCountChanged)
+    Q_PROPERTY(bool canRedo READ canRedo NOTIFY strokeCountChanged)
+    // Expose enum to QML for readability: Canvas.Brush, Canvas.Eraser, ...
 
 public:
     explicit Canvas(QQuickItem *parent = nullptr);
+
+    // Tool enum exposed to QML
+    enum ToolType { Brush = 0, Eraser = 1, Fill = 2 };
+    Q_ENUM(ToolType)
 
     Renderer *createRenderer() const override;
 
@@ -50,11 +63,18 @@ public:
     QVector2D cursorPos() const { return m_cursorPos; }
 
     Q_INVOKABLE bool undoLastStroke();
+    Q_INVOKABLE bool redoLastStroke();
     Q_INVOKABLE bool removeStroke(int index);
     Q_INVOKABLE void clearAllStrokes();
+    Q_INVOKABLE bool hasContent() const; // strokes or raster in active layer
+    Q_INVOKABLE bool canUndo() const;    // wrapper for active layer
+    Q_INVOKABLE bool canRedo() const;    // wrapper for active layer
     Q_INVOKABLE int addLayer(const QString &name = QString()); // returns new layer index
     Q_INVOKABLE bool removeLayer(int index);
     Q_INVOKABLE void setLayer(int index) { setActiveLayerIndex(index); }
+    // Tool management
+    Q_INVOKABLE void setActiveTool(int kind);
+    Q_INVOKABLE int activeTool() const;
     // Load a base image (PNG/JPEG) that will be drawn under strokes
     Q_INVOKABLE bool loadBaseImage(const QUrl &imageUrl);
     // Save current composited canvas (base + strokes) to .ora
@@ -80,6 +100,7 @@ signals:
     void cursorPosChanged();
     void layerCountChanged();
     void activeLayerIndexChanged();
+    void activeToolChanged();
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -93,4 +114,7 @@ private:
     QList<Layer*> m_layers;
     int m_activeLayerIndex = -1;
     QImage m_baseImage;
+    std::unique_ptr<ToolManager> m_toolMgr;
+    std::unique_ptr<EraserTool> m_eraserTool;
+    std::unique_ptr<class FillTool> m_fillTool;
 };

@@ -38,9 +38,28 @@ private:
     QList<QVector2D> m_currentPointsSnap;
     QColor m_currentColorSnap;
     float m_currentSizeSnap = 0.0f;
+    BrushStroke::StrokeMode m_currentModeSnap = BrushStroke::Draw;
     bool m_isDrawingSnap = false;
+    int m_activeLayerIndexSnap = -1;
     QVector2D m_cursorPosSnap;
     QColor m_brushColorSnap;
     float m_brushSizeSnap = 0.0f;
     qreal m_dpr = 1.0;
+
+    // Performance caching
+    // Cached per-layer rendered image (all committed strokes + raster) excluding any in-progress stroke.
+    QVector<QImage> m_cachedLayerImages;
+    // Version signature per layer to know when to rebuild the cached image.
+    // Computed from stroke count, per-stroke point counts, and erase stroke count.
+    QVector<qint64> m_cachedLayerVersions;
+    // Track last in-progress point count stamped (to allow incremental stamping if desired).
+    int m_lastInProgressStampedCount = 0;
+    // Track previous drawing state to decide composition path.
+    bool m_prevWasDrawing = false;
+    // Composite of all cached layers except active (rebuilt only when those layers change)
+    QImage m_baseCompositeExcludingActive;
+    // Active layer clone with incremental in-progress stroke stamping
+    QImage m_activeInProgressImage;
+    // Track whether m_buffer currently represents baseComposite + active layer so we can stamp deltas
+    bool m_incrementalCompositeValid = false;
 };

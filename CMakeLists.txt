@@ -12,6 +12,11 @@ qt_add_executable(appTrahere
     main.cpp
     src/Canvas.h
     src/Canvas.cpp
+    src/Tool.h
+    src/ToolManager.h
+    src/EraserTool.h
+    src/FillTool.h
+    src/FillTool.cpp
     src/Layer.h
     src/Layer.cpp
     src/BrushEngine.cpp

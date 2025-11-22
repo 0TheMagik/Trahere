@@ -26,6 +26,7 @@ void GLRenderer::synchronize(QQuickFramebufferObject *item) {
 
     // Snapshot per-layer content in stacking order (bottom -> top)
     m_layersSnap.clear();
+    m_activeLayerIndexSnap = -1;
     const QList<Layer*> &raw = canvas->rawLayers();
     for (int li = 0; li < raw.size(); ++li) {
         Layer* layer = raw.at(li);
@@ -35,6 +36,7 @@ void GLRenderer::synchronize(QQuickFramebufferObject *item) {
         if (snap.visible && layer->hasRaster()) snap.raster = layer->raster();
         snap.strokes = layer->engine().strokes();
         m_layersSnap.append(std::move(snap));
+        if (layer == canvas->activeLayer()) m_activeLayerIndexSnap = li;
     }
 
     // Snapshot active layer in-progress stroke if any
@@ -44,9 +46,11 @@ void GLRenderer::synchronize(QQuickFramebufferObject *item) {
         m_currentPointsSnap = active->engine().currentPoints();
         m_currentColorSnap = active->engine().currentColor();
         m_currentSizeSnap = active->engine().currentSize();
+        m_currentModeSnap = active->engine().currentMode();
     } else {
         m_isDrawingSnap = false;
         m_currentPointsSnap.clear();
+        m_currentModeSnap = BrushStroke::Draw;
     }
 
     // Snapshot UI-related values
@@ -231,56 +235,270 @@ void GLRenderer::render() {
         }
     };
 
-    // Rebuild buffer from all committed strokes only if stroke count changed or forced
-    // Compute a simple version stamp from visible raster count + total strokes
-    int totalStrokes = 0;
-    int rasterCount = 0;
-    for (const auto &ls : m_layersSnap) {
-        totalStrokes += ls.strokes.size();
-        if (ls.visible && !ls.raster.isNull()) ++rasterCount;
-    }
-    int contentVersion = totalStrokes + rasterCount * 1000003;
-    if (m_rebuildVersion != contentVersion) {
-        // Start with background (white or base image if set)
-        if (m_canvas && m_canvas->hasBaseImage()) {
-            QImage base = m_canvas->baseImage();
-            if (base.size() != m_buffer.size()) {
-                base = base.scaled(m_buffer.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-            }
-            if (base.format() != QImage::Format_RGBA8888) {
-                base = base.convertToFormat(QImage::Format_RGBA8888);
-            }
-            m_buffer = base;
-        } else {
-            m_buffer.fill(Qt::white);
+    // --- Layer versioning & caching ---
+    // Compute version signatures for each layer to know if cached image needs rebuild.
+    QVector<qint64> currentLayerVersions; currentLayerVersions.reserve(m_layersSnap.size());
+    const qint64 P1 = 1000003LL, P2 = 2000003LL, P3 = 3000017LL, P4 = 7000003LL;
+    for (int idx=0; idx<m_layersSnap.size(); ++idx) {
+        const auto &ls = m_layersSnap[idx];
+        qint64 strokeCount = ls.strokes.size();
+        qint64 eraseCount = 0;
+        qint64 pointsAccum = 0;
+        for (const auto &s : ls.strokes) {
+            if (s.mode == BrushStroke::Erase) ++eraseCount;
+            pointsAccum += s.points.size();
         }
-        // Draw per layer: raster first, then its strokes
-        QPainter imgPainter(&m_buffer);
-        for (const auto &ls : m_layersSnap) {
-            if (!ls.visible) continue;
+        qint64 rasterFlag = (!ls.raster.isNull() && ls.visible) ? 1 : 0;
+        // Include raster revision via attached property stored in alpha channel of first pixel if needed; fallback 0.
+        // For robustness, derive a lightweight hash of raster top-left pixel + size even if stroke counts unchanged.
+        qint64 rasterHash = 0;
+        if (rasterFlag) {
+            rasterHash = ls.raster.width()*1469598103934665603ULL + ls.raster.height()*1099511628211ULL;
+            if (!ls.raster.isNull()) {
+                QRgb px = ls.raster.pixel(0,0);
+                rasterHash ^= (qRed(px) + 1); rasterHash *= 1099511628211ULL;
+                rasterHash ^= (qGreen(px) + 1); rasterHash *= 1099511628211ULL;
+                rasterHash ^= (qBlue(px) + 1); rasterHash *= 1099511628211ULL;
+                rasterHash ^= (qAlpha(px) + 1); rasterHash *= 1099511628211ULL;
+            }
+        }
+        qint64 version = strokeCount * P1 + eraseCount * P2 + pointsAccum * P3 + rasterFlag * P4 + rasterHash;
+        currentLayerVersions.push_back(version);
+    }
+
+    // Initialize caches if first time or layer count changed
+    if (m_cachedLayerImages.size() != m_layersSnap.size()) {
+        m_cachedLayerImages.resize(m_layersSnap.size());
+        m_cachedLayerVersions.resize(m_layersSnap.size());
+        for (int i=0;i<m_cachedLayerVersions.size();++i) m_cachedLayerVersions[i] = -1; // force rebuild
+    }
+
+    // Function to stamp stroke into a layer image (supports erase)
+    auto stampStroke = [&](QImage &layerImg, const QList<QVector2D>& pts, const QColor &col, float size, BrushStroke::StrokeMode mode){
+            if (pts.isEmpty()) return;
+            // Reuse previous interpolated logic: treat layerImg as buffer target
+            QImage *targetPtr = &layerImg;
+            auto paintCirclePixLayer = [&](float cxPix, float cyPix, const QColor &color, float radiusPix){
+                const float r = std::max(0.5f, radiusPix);
+                const int rPix = static_cast<int>(std::ceil(r));
+                const int w = targetPtr->width();
+                const int h = targetPtr->height();
+                const int x0 = std::max(0, static_cast<int>(std::floor(cxPix - rPix)));
+                const int x1 = std::min(w - 1, static_cast<int>(std::ceil(cxPix + rPix)));
+                const int y0 = std::max(0, static_cast<int>(static_cast<int>(std::floor(cyPix - rPix))));
+                const int y1 = std::min(h - 1, static_cast<int>(std::ceil(cyPix + rPix)));
+                const float rSq = r * r;
+                constexpr float root2over2 = 0.70710678f;
+                const float inner = std::max(0.0f, r - root2over2);
+                const float innerSq = inner * inner;
+                const float outer = r + root2over2;
+                const float outerSq = outer * outer;
+                const float sr = color.redF();
+                const float sg = color.greenF();
+                const float sb = color.blueF();
+                const float saBrush = color.alphaF();
+                static const float offs[4] = { -0.375f, -0.125f, 0.125f, 0.375f };
+                for (int y = y0; y <= y1; ++y) {
+                    QRgb *scan = reinterpret_cast<QRgb*>(targetPtr->scanLine(y));
+                    const float pyCenter = (float)y + 0.5f;
+                    const float dyc = pyCenter - cyPix;
+                    const float dycSq = dyc * dyc;
+                    for (int x = x0; x <= x1; ++x) {
+                        const float pxCenter = (float)x + 0.5f;
+                        const float dxc = pxCenter - cxPix;
+                        const float centerDistSq = dxc * dxc + dycSq;
+                        float coverage = 0.0f;
+                        if (centerDistSq <= innerSq) coverage = 1.0f; else if (centerDistSq >= outerSq) continue; else {
+                            int inside = 0;
+                            for (int jy = 0; jy < 4; ++jy) {
+                                const float oy = offs[jy];
+                                const float sy = pyCenter + oy;
+                                const float dy = sy - cyPix;
+                                for (int ix = 0; ix < 4; ++ix) {
+                                    const float ox = offs[ix];
+                                    const float sx = pxCenter + ox;
+                                    const float dx = sx - cxPix;
+                                    const float dsq = dx * dx + dy * dy;
+                                    if (dsq <= rSq) ++inside;
+                                }
+                            }
+                            coverage = inside / 16.0f;
+                            if (coverage <= 0.0f) continue;
+                        }
+                        if (mode == BrushStroke::Erase) {
+                            // Clear pixel: set transparent
+                            scan[x] = qRgba(0,0,0,0);
+                            continue;
+                        }
+                        // Draw mode compositing over existing pixel
+                        const float srcA = std::clamp(coverage * saBrush, 0.0f, 1.0f);
+                        if (srcA <= 0.0f) continue;
+                        const QRgb dst = scan[x];
+                        float dr = qRed(dst) / 255.0f;
+                        float dg = qGreen(dst) / 255.0f;
+                        float db = qBlue(dst) / 255.0f;
+                        float da = qAlpha(dst) / 255.0f;
+                        float outA = srcA + da * (1.0f - srcA);
+                        float outR = (sr * srcA + dr * da * (1.0f - srcA));
+                        float outG = (sg * srcA + dg * da * (1.0f - srcA));
+                        float outB = (sb * srcA + db * da * (1.0f - srcA));
+                        if (outA > 0.0001f) {
+                            outR /= outA; outG /= outA; outB /= outA;
+                        }
+                        int ir = (int)std::lround(std::clamp(outR * 255.0f, 0.0f, 255.0f));
+                        int ig = (int)std::lround(std::clamp(outG * 255.0f, 0.0f, 255.0f));
+                        int ib = (int)std::lround(std::clamp(outB * 255.0f, 0.0f, 255.0f));
+                        int ia = (int)std::lround(std::clamp(outA * 255.0f, 0.0f, 255.0f));
+                        scan[x] = qRgba(ir, ig, ib, ia);
+                    }
+                }
+            };
+            const int n = pts.size();
+            if (n == 0) return;
+            float radiusPix = std::max(0.5f, size * 0.5f * (float)dpr);
+            QVector2D p0 = pts.first() * (float)dpr;
+            paintCirclePixLayer(p0.x(), p0.y(), col, radiusPix);
+            for (int i=1;i<n;++i){
+                QVector2D a = pts[i-1] * (float)dpr;
+                QVector2D b = pts[i] * (float)dpr;
+                QVector2D d = b - a;
+                float len = std::sqrt(d.lengthSquared());
+                if (len < 1e-3f) { paintCirclePixLayer(b.x(), b.y(), col, radiusPix); continue; }
+                QVector2D dir = d / len;
+                float step = std::max(1.0f, radiusPix * 0.5f);
+                float t = 0.0f;
+                while (t <= len) { QVector2D p = a + dir * t; paintCirclePixLayer(p.x(), p.y(), col, radiusPix); t += step; }
+                paintCirclePixLayer(b.x(), b.y(), col, radiusPix);
+            }
+        };
+
+    // Rebuild any invalidated cached layer images (excluding in-progress stroke)
+    for (int li=0; li<m_layersSnap.size(); ++li) {
+        const auto &ls = m_layersSnap[li];
+        if (!ls.visible) {
+            m_cachedLayerImages[li] = QImage();
+            m_cachedLayerVersions[li] = currentLayerVersions[li];
+            continue;
+        }
+        if (m_cachedLayerVersions[li] != currentLayerVersions[li]) {
+            QImage layerImg(m_viewportSize, QImage::Format_RGBA8888);
+            layerImg.fill(Qt::transparent);
+            // Raster base
             if (!ls.raster.isNull()) {
                 QImage r = ls.raster;
-                if (r.size() != m_buffer.size()) {
-                    r = r.scaled(m_buffer.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                }
-                imgPainter.drawImage(0, 0, r);
+                if (r.size() != m_viewportSize) r = r.scaled(m_viewportSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                QPainter rp(&layerImg); rp.drawImage(0,0,r); rp.end();
             }
-            // Draw this layer's strokes
-            imgPainter.end(); // ensure no pending state before direct pixel ops
-            for (int i = 0; i < ls.strokes.size(); ++i) {
-                const BrushStroke &stroke = ls.strokes.at(i);
-                drawStrokeInterpolated(stroke.points, stroke.color, stroke.size);
+            // Committed strokes
+            for (const auto &stroke : ls.strokes) {
+                stampStroke(layerImg, stroke.points, stroke.color, stroke.size, stroke.mode);
             }
-            imgPainter.begin(&m_buffer);
+            m_cachedLayerImages[li] = layerImg;
+            m_cachedLayerVersions[li] = currentLayerVersions[li];
         }
-        imgPainter.end();
+    }
+
+    // Incremental compositing path
+    qint64 layersCombinedVersion = 0;
+    for (qint64 v : currentLayerVersions) layersCombinedVersion ^= (v + 0x9e3779b97f4a7c15ULL);
+    qint64 contentVersion = layersCombinedVersion; // exclude in-progress stroke changes
+    bool layersChanged = (m_rebuildVersion != contentVersion);
+
+    if (layersChanged) {
+        // Rebuild base composite excluding active layer
+        if (m_canvas && m_canvas->hasBaseImage()) {
+            QImage base = m_canvas->baseImage();
+            if (base.size() != m_viewportSize) base = base.scaled(m_viewportSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            if (base.format() != QImage::Format_RGBA8888) base = base.convertToFormat(QImage::Format_RGBA8888);
+            m_baseCompositeExcludingActive = base;
+        } else {
+            m_baseCompositeExcludingActive = QImage(m_viewportSize, QImage::Format_RGBA8888);
+            m_baseCompositeExcludingActive.fill(Qt::white);
+        }
+        QPainter basep(&m_baseCompositeExcludingActive);
+        for (int li=0; li<m_cachedLayerImages.size(); ++li) {
+            if (li == m_activeLayerIndexSnap) continue; // exclude active layer content
+            const QImage &img = m_cachedLayerImages[li];
+            if (!img.isNull()) basep.drawImage(0,0,img);
+        }
+        basep.end();
         m_rebuildVersion = contentVersion;
-        m_bufferDirty = true;
+        // Base changed invalidates incremental composite
+        m_incrementalCompositeValid = false;
     }
-    // Add in-progress stroke on top (not yet committed)
+
+    // Handle in-progress stroke incrementally
     if (m_isDrawingSnap) {
-        drawStrokeInterpolated(m_currentPointsSnap, m_currentColorSnap, m_currentSizeSnap);
+        if (!m_prevWasDrawing) {
+            // New stroke start: clone active cached image or initialize transparent
+            if (m_activeLayerIndexSnap >=0 && m_activeLayerIndexSnap < m_cachedLayerImages.size()) {
+                m_activeInProgressImage = m_cachedLayerImages[m_activeLayerIndexSnap];
+            }
+            if (m_activeInProgressImage.isNull()) {
+                m_activeInProgressImage = QImage(m_viewportSize, QImage::Format_RGBA8888);
+                m_activeInProgressImage.fill(Qt::transparent);
+            }
+            m_lastInProgressStampedCount = 0;
+            // Initialize final buffer composite now
+            if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_RGBA8888);
+            m_buffer.fill(Qt::transparent);
+            QPainter initp(&m_buffer);
+            if (!m_baseCompositeExcludingActive.isNull()) initp.drawImage(0,0,m_baseCompositeExcludingActive);
+            if (!m_activeInProgressImage.isNull()) initp.drawImage(0,0,m_activeInProgressImage);
+            initp.end();
+            m_incrementalCompositeValid = true;
+            m_bufferDirty = true;
+        }
+        int currentCount = m_currentPointsSnap.size();
+        if (currentCount > 0) {
+            QList<QVector2D> segment;
+            if (m_lastInProgressStampedCount == 0) {
+                segment = m_currentPointsSnap; // first frame stamp all
+            } else if (currentCount > m_lastInProgressStampedCount) {
+                int start = m_lastInProgressStampedCount - 1;
+                if (start < 0) start = 0;
+                for (int i=start; i<currentCount; ++i) segment.append(m_currentPointsSnap[i]);
+            }
+            if (!segment.isEmpty()) {
+                // Stamp segment onto active layer clone
+                stampStroke(m_activeInProgressImage, segment, m_currentColorSnap, m_currentSizeSnap, m_currentModeSnap);
+                // If incremental composite valid, also stamp directly into final buffer
+                if (m_incrementalCompositeValid) {
+                    stampStroke(m_buffer, segment, m_currentColorSnap, m_currentSizeSnap, m_currentModeSnap);
+                    m_bufferDirty = true;
+                } else {
+                    // Fallback: rebuild final composite this frame
+                    if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_RGBA8888);
+                    m_buffer.fill(Qt::transparent);
+                    QPainter finalRe(&m_buffer);
+                    if (!m_baseCompositeExcludingActive.isNull()) finalRe.drawImage(0,0,m_baseCompositeExcludingActive);
+                    finalRe.drawImage(0,0,m_activeInProgressImage);
+                    finalRe.end();
+                    m_bufferDirty = true;
+                    m_incrementalCompositeValid = true;
+                }
+                m_lastInProgressStampedCount = currentCount;
+            }
+        }
     }
+
+    // Compose final buffer only if not drawing (or layers changed without incremental validity)
+    if (!m_isDrawingSnap) {
+        if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_RGBA8888);
+        m_buffer.fill(Qt::transparent);
+        QPainter finalComp(&m_buffer);
+        if (!m_baseCompositeExcludingActive.isNull()) finalComp.drawImage(0,0,m_baseCompositeExcludingActive);
+        if (m_activeLayerIndexSnap >=0 && m_activeLayerIndexSnap < m_cachedLayerImages.size()) {
+            const QImage &activeImg = m_cachedLayerImages[m_activeLayerIndexSnap];
+            if (!activeImg.isNull()) finalComp.drawImage(0,0,activeImg);
+        }
+        finalComp.end();
+        m_bufferDirty = true;
+        m_activeInProgressImage = QImage();
+        m_lastInProgressStampedCount = 0;
+        m_incrementalCompositeValid = false;
+    }
+    m_prevWasDrawing = m_isDrawingSnap;
 
     // Upload to texture
     if (m_texture == 0) {

@@ -1,8 +1,13 @@
 #include "BrushEngine.h"
 #include <utility>
 
-void BrushEngine::beginStroke(const QVector2D &pos, const QColor &color, float size) {
-    m_currentStroke = BrushStroke{color, size, {pos}};
+void BrushEngine::beginStroke(const QVector2D &pos, const QColor &color, float size, BrushStroke::StrokeMode mode) {
+    BrushStroke stroke;
+    stroke.color = color;
+    stroke.size = size;
+    stroke.points = {pos};
+    stroke.mode = mode;
+    m_currentStroke = std::move(stroke);
     m_drawing = true;
 }
 
@@ -37,4 +42,12 @@ bool BrushEngine::removeStrokeAt(int index) {
 
 void BrushEngine::clearStrokes() {
     m_strokes.clear();
+}
+
+void BrushEngine::replaceStrokes(const QList<BrushStroke> &strokes) {
+    m_strokes = strokes;
+}
+
+void BrushEngine::appendStroke(const BrushStroke &stroke) {
+    m_strokes.append(stroke);
 }

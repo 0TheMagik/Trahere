@@ -11,6 +11,7 @@
 #include <QPointF>
 #include <QMouseEvent>
 #include "Layer.h"
+#include "FillTool.h"
 Canvas::~Canvas() {
     for (Layer* l : m_layers) {
         if (l) l->deleteLater();
@@ -43,6 +44,26 @@ Canvas::Canvas(QQuickItem *parent)
     // Create initial base layer
     addLayer("Layer 1");
     setActiveLayerIndex(0);
+
+    // Initialize ToolManager with resolver to the current active tool instance (Brush for now)
+    m_eraserTool = std::make_unique<EraserTool>([this]() -> BrushEngine* {
+        Layer* layer = activeLayer();
+        return layer ? &layer->engine() : nullptr;
+    });
+    m_fillTool = std::make_unique<FillTool>(
+        [this]() -> Layer* { return activeLayer(); },
+        [this]() -> QSize { return QSize(int(width()), int(height())); }
+    );
+    m_toolMgr = std::make_unique<ToolManager>([this](ToolKind kind) -> ::Tool* {
+        Layer* layer = activeLayer();
+        if (!layer) return nullptr;
+        switch (kind) {
+            case ToolKind::Brush:  return static_cast<::Tool*>(&layer->engine());
+            case ToolKind::Eraser: return static_cast<::Tool*>(m_eraserTool.get());
+            case ToolKind::Fill:   return static_cast<::Tool*>(m_fillTool.get());
+            default: return static_cast<::Tool*>(&layer->engine());
+        }
+    });
 }
 
 QQuickFramebufferObject::Renderer *Canvas::createRenderer() const {
@@ -63,35 +84,76 @@ void Canvas::setBrushSize(float size) {
     }
 }
 
+void Canvas::setActiveTool(int kind) {
+    if (!m_toolMgr) return;
+    ToolKind tk = ToolKind::Brush; // default/fallback
+    switch (kind) {
+        case Canvas::Brush:  tk = ToolKind::Brush; break;
+        case Canvas::Eraser: tk = ToolKind::Eraser; break;
+        case Canvas::Fill:   tk = ToolKind::Fill; break;
+        default: tk = ToolKind::Brush; break;
+    }
+    if (static_cast<int>(m_toolMgr->activeTool()) == static_cast<int>(tk)) return;
+    m_toolMgr->setActiveTool(tk);
+    emit activeToolChanged();
+}
+
+int Canvas::activeTool() const {
+    if (!m_toolMgr) return 0;
+    return static_cast<int>(m_toolMgr->activeTool());
+}
+
 void Canvas::mousePressEvent(QMouseEvent *event) {
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
-    if (activeLayer())
-        activeLayer()->engine().beginStroke(QVector2D(event->position()), m_brushColor, m_brushSize);
+    if (m_toolMgr)
+        m_toolMgr->onPress(QVector2D(event->position()), m_brushColor, m_brushSize);
     update();
 }
 
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
-    if (activeLayer())
-        activeLayer()->engine().addPoint(QVector2D(event->position()));
+    if (m_toolMgr)
+        m_toolMgr->onMove(QVector2D(event->position()));
     update();
 }
 
 void Canvas::mouseReleaseEvent(QMouseEvent *event) {
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
+    if (m_toolMgr)
+        m_toolMgr->onRelease();
+    // If active tool produced a stroke (Brush or Eraser), record stroke operation for undo
     if (activeLayer()) {
-        activeLayer()->engine().endStroke();
-        emit strokeCountChanged();
+        int tool = activeTool();
+        if (tool == Canvas::Brush || tool == Canvas::Eraser) {
+            const auto &strokes = activeLayer()->engine().strokes();
+            if (!strokes.isEmpty()) {
+                activeLayer()->recordStrokeOperation(strokes.last());
+                emit strokeCountChanged();
+            }
+        } else if (tool == Canvas::Fill) {
+            // Fill operation already recorded inside FillTool
+            emit strokeCountChanged(); // reflect raster change & history update
+        }
     }
     update();
 }
 
 bool Canvas::undoLastStroke() {
     if (!activeLayer()) return false;
-    bool ok = activeLayer()->engine().removeLastStroke();
+    bool ok = activeLayer()->undoLastOperation();
+    if (ok) {
+        emit strokeCountChanged();
+        update();
+    }
+    return ok;
+}
+
+Q_INVOKABLE bool Canvas::redoLastStroke() {
+    if (!activeLayer()) return false;
+    bool ok = activeLayer()->redoLastOperation();
     if (ok) {
         emit strokeCountChanged();
         update();
@@ -109,10 +171,28 @@ bool Canvas::removeStroke(int index) {
     return ok;
 }
 
+bool Canvas::hasContent() const {
+    Layer* al = activeLayer();
+    if (!al) return false;
+    return al->engine().strokeCount() > 0 || al->hasRaster();
+}
+
+bool Canvas::canUndo() const {
+    Layer* al = activeLayer();
+    return al ? al->canUndo() : false;
+}
+
+bool Canvas::canRedo() const {
+    Layer* al = activeLayer();
+    return al ? al->canRedo() : false;
+}
+
 void Canvas::clearAllStrokes() {
     if (!activeLayer()) return;
-    if (activeLayer()->engine().strokeCount() == 0) return;
+    // Full clear: strokes, raster, and history so redo/undo stack resets.
     activeLayer()->engine().clearStrokes();
+    activeLayer()->clearRaster();
+    activeLayer()->clearHistory();
     emit strokeCountChanged();
     update();
 }
@@ -172,36 +252,58 @@ bool Canvas::loadBaseImage(const QUrl &imageUrl) {
 
 // Duplicate lightweight rasterization similar to GLRenderer (white bg + base image + strokes)
 QImage Canvas::compositedImage() const {
-    // Use window size if available otherwise base image size
+    // Determine target size prioritizing item size then base image then fallback
     QSize targetSize = QSize(int(width()), int(height()));
     if (targetSize.width() <= 0 || targetSize.height() <= 0) {
-        if (!m_baseImage.isNull()) targetSize = m_baseImage.size();
-        else targetSize = QSize(512, 512);
+        targetSize = !m_baseImage.isNull() ? m_baseImage.size() : QSize(512,512);
     }
     QImage buffer(targetSize, QImage::Format_RGBA8888);
+    // Start with opaque white background (similar to renderer) then draw base image if present
     buffer.fill(Qt::white);
     if (!m_baseImage.isNull()) {
-        QImage scaled = (m_baseImage.size() == targetSize) ? m_baseImage : m_baseImage.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        QPainter p(&buffer);
-        p.drawImage(0, 0, scaled);
-        p.end();
+        QImage base = m_baseImage;
+        if (base.size() != targetSize)
+            base = base.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        if (base.format() != QImage::Format_RGBA8888)
+            base = base.convertToFormat(QImage::Format_RGBA8888);
+        QPainter bp(&buffer); bp.drawImage(0,0,base); bp.end();
     }
-    // Simple stroke rendering using QPainter path (does not perfectly match GL stamping but acceptable)
-    QPainter painter(&buffer);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    if (activeLayer()) {
-        for (const auto &stroke : activeLayer()->engine().strokes()) {
-            if (stroke.points.isEmpty()) continue;
-            QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-            painter.setPen(pen);
-            QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
-            for (int i=1;i<stroke.points.size();++i) {
-                path.lineTo(stroke.points[i].x(), stroke.points[i].y());
-            }
-            painter.drawPath(path);
+    // Composite all layers bottom -> top including each layer's raster and strokes
+    QPainter compPainter(&buffer); compPainter.setRenderHint(QPainter::Antialiasing, true);
+    for (int li = 0; li < m_layers.size(); ++li) {
+        Layer* layer = m_layers.at(li);
+        if (!layer || !layer->isVisible()) continue;
+        // Prepare layer image
+        QImage layerImg(targetSize, QImage::Format_RGBA8888);
+        layerImg.fill(Qt::transparent);
+        QPainter lp(&layerImg); lp.setRenderHint(QPainter::Antialiasing, true);
+        if (layer->hasRaster()) {
+            QImage r = layer->raster();
+            if (r.size() != targetSize)
+                r = r.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            if (r.format() != QImage::Format_RGBA8888)
+                r = r.convertToFormat(QImage::Format_RGBA8888);
+            lp.drawImage(0,0,r);
         }
+        const auto &strokes = layer->engine().strokes();
+        for (const auto &stroke : strokes) {
+            if (stroke.points.isEmpty()) continue;
+            QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
+            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            if (stroke.mode == BrushStroke::Erase) {
+                lp.setCompositionMode(QPainter::CompositionMode_Clear);
+                QPen pen(Qt::transparent, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                lp.setPen(pen); lp.drawPath(path);
+                lp.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            } else {
+                QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                lp.setPen(pen); lp.drawPath(path);
+            }
+        }
+        lp.end();
+        compPainter.drawImage(0,0,layerImg);
     }
-    painter.end();
+    compPainter.end();
     return buffer;
 }
 
@@ -216,33 +318,37 @@ bool Canvas::saveOra(const QUrl &destinationUrl) {
 }
 
 bool Canvas::saveOraStrokesOnly(const QUrl &destinationUrl) {
-    // Determine size from existing base image or current item size
-    QSize targetSize = !m_baseImage.isNull() ? m_baseImage.size() : QSize(int(width()), int(height()));
-    if (targetSize.width() <= 0 || targetSize.height() <= 0) targetSize = QSize(512, 512);
+    // Determine size; no base image compositing (transparent background)
+    QSize targetSize = QSize(int(width()), int(height()));
+    if (targetSize.width() <= 0 || targetSize.height() <= 0)
+        targetSize = !m_baseImage.isNull() ? m_baseImage.size() : QSize(512,512);
     QImage buffer(targetSize, QImage::Format_RGBA8888);
-    buffer.fill(Qt::transparent); // start transparent
-    // Preserve previously saved content (flattened strokes) if base image exists
-    if (!m_baseImage.isNull()) {
-        QImage base = m_baseImage;
-        if (base.size() != targetSize) {
-            base = base.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    buffer.fill(Qt::transparent);
+    QPainter painter(&buffer); painter.setRenderHint(QPainter::Antialiasing, true);
+    // Include raster content from all visible layers (since fills produce raster) then strokes
+    for (int li=0; li<m_layers.size(); ++li) {
+        Layer* layer = m_layers.at(li);
+        if (!layer || !layer->isVisible()) continue;
+        if (layer->hasRaster()) {
+            QImage r = layer->raster();
+            if (r.size() != targetSize)
+                r = r.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            if (r.format() != QImage::Format_RGBA8888)
+                r = r.convertToFormat(QImage::Format_RGBA8888);
+            painter.drawImage(0,0,r);
         }
-        QPainter basePainter(&buffer);
-        basePainter.drawImage(0, 0, base);
-        basePainter.end();
-    }
-    QPainter painter(&buffer);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    if (activeLayer()) {
-        for (const auto &stroke : activeLayer()->engine().strokes()) {
+        for (const auto &stroke : layer->engine().strokes()) {
             if (stroke.points.isEmpty()) continue;
-            QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-            painter.setPen(pen);
             QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
-            for (int i=1;i<stroke.points.size();++i) {
-                path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            if (stroke.mode == BrushStroke::Erase) {
+                painter.setCompositionMode(QPainter::CompositionMode_Clear);
+                QPen pen(Qt::transparent, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter.setPen(pen); painter.drawPath(path); painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            } else {
+                QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter.setPen(pen); painter.drawPath(path);
             }
-            painter.drawPath(path);
         }
     }
     painter.end();
@@ -266,23 +372,35 @@ bool Canvas::saveOraAllLayers(const QUrl &destinationUrl) {
 
     // Build per-layer images. Internal m_layers is assumed bottom->top (new appended layers over earlier ones)
     // For ORA we need top-most first, so iterate reversed.
-    for (int li = m_layers.size() - 1; li >= 0; --li) {
+    for (int li = m_layers.size() - 1; li >= 0; --li) { // top-first for ORA
         Layer* layer = m_layers.at(li);
         if (!layer) continue;
         QImage img(targetSize, QImage::Format_RGBA8888);
         img.fill(Qt::transparent);
-        QPainter painter(&img);
-        painter.setRenderHint(QPainter::Antialiasing, true);
+        QPainter painter(&img); painter.setRenderHint(QPainter::Antialiasing, true);
+        // Draw raster first (contains flattened fills)
+        if (layer->hasRaster()) {
+            QImage r = layer->raster();
+            if (r.size() != targetSize)
+                r = r.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            if (r.format() != QImage::Format_RGBA8888)
+                r = r.convertToFormat(QImage::Format_RGBA8888);
+            painter.drawImage(0,0,r);
+        }
+        // Then strokes
         const auto &strokes = layer->engine().strokes();
         for (const auto &stroke : strokes) {
             if (stroke.points.isEmpty()) continue;
-            QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-            painter.setPen(pen);
             QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
-            for (int i=1;i<stroke.points.size();++i) {
-                path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            if (stroke.mode == BrushStroke::Erase) {
+                painter.setCompositionMode(QPainter::CompositionMode_Clear);
+                QPen pen(Qt::transparent, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter.setPen(pen); painter.drawPath(path); painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            } else {
+                QPen pen(stroke.color, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter.setPen(pen); painter.drawPath(path);
             }
-            painter.drawPath(path);
         }
         painter.end();
         layerImages.append(img);
