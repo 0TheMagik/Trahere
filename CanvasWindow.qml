@@ -64,7 +64,7 @@ Window {
                         
                         }
                     MenuSeparator {}
-                    MenuItem { text: "Export..." }
+                    MenuItem { text: "Export PNG..."; onTriggered: pngExportDialog.open() }
                     MenuItem { text: "Close" }
                 }
 
@@ -386,6 +386,24 @@ Window {
         onAccepted: {
             // Apply selected color to tools that use color (Brush and Fill use brushColor)
             glCanvas.brushColor = selectedColor
+        }
+    }
+
+    FileDialog {
+        id: pngExportDialog
+        title: "Export PNG"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["PNG Image (*.png)"]
+        onAccepted: {
+            var url = selectedFile
+            if (!url) return
+            // Append .png if missing (robust)
+            var lower = url.toString().toLowerCase()
+            if (!lower.endsWith(".png")) {
+                url = url + ".png"
+            }
+            var ok = glCanvas.exportPng(url)
+            console.log(ok ? "PNG exported:" : "PNG export failed", url)
         }
     }
 

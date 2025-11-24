@@ -575,6 +575,35 @@ bool Canvas::saveOraAllLayers(const QUrl &destinationUrl) {
     return ok;
 }
 
+bool Canvas::exportPng(const QUrl &destinationUrl) {
+    if (!destinationUrl.isValid()) {
+        qWarning() << "Canvas.exportPng: invalid url" << destinationUrl;
+        return false;
+    }
+    // Ambil path lokal
+    QString localPath = destinationUrl.isLocalFile() ? destinationUrl.toLocalFile() : destinationUrl.toString();
+    if (localPath.isEmpty()) {
+        qWarning() << "Canvas.exportPng: empty path" << destinationUrl;
+        return false;
+    }
+    // Pastikan extensi .png
+    if (!localPath.toLower().endsWith(".png")) {
+        localPath += ".png";
+    }
+    QImage img = compositedImage(); // sudah latar putih + base image + semua layer visible
+    if (img.isNull()) {
+        qWarning() << "Canvas.exportPng: composited image null";
+        return false;
+    }
+    bool ok = img.save(localPath, "PNG");
+    if (!ok) {
+        qWarning() << "Canvas.exportPng: gagal menyimpan" << localPath;
+    } else {
+        qWarning() << "Canvas.exportPng: berhasil" << localPath;
+    }
+    return ok;
+}
+
 bool Canvas::loadOraLayers(const QStringList &layerImagePaths) {
     if (layerImagePaths.isEmpty()) return false;
     // Clear current layers

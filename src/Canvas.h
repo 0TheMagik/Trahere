@@ -100,6 +100,8 @@ public:
     Q_INVOKABLE bool saveOraAllLayers(const QUrl &destinationUrl);
     // Export composited image as QImage (for testing / other saves)
     Q_INVOKABLE QImage compositedImage() const;
+    // Export flattened (background putih) PNG dengan semua layer & base image
+    Q_INVOKABLE bool exportPng(const QUrl &destinationUrl);
     // Load raster layers from extracted ORA layer image paths (absolute).
     Q_INVOKABLE bool loadOraLayers(const QStringList &layerImagePaths);
 
