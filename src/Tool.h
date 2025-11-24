@@ -15,4 +15,7 @@ public:
     virtual void onRelease() = 0;
 
     virtual bool isDrawing() const { return false; }
+    // Optional: dynamically adjust current stroke size (e.g., from pen pressure)
+    // Default no-op; tools that support it should override.
+    virtual void setDynamicSize(float /*size*/) {}
 };

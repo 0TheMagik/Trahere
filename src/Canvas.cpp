@@ -10,6 +10,10 @@
 #include <QPainterPath>
 #include <QPointF>
 #include <QMouseEvent>
+#include <QTabletEvent>
+#include <QTouchEvent>
+#include <QQuickWindow>
+#include <algorithm>
 #include "Layer.h"
 #include "FillTool.h"
 Canvas::~Canvas() {
@@ -41,6 +45,8 @@ Canvas::Canvas(QQuickItem *parent)
       m_cursorPos(QVector2D(0,0))
 {
     setAcceptedMouseButtons(Qt::AllButtons);
+    setAcceptHoverEvents(true);
+    setAcceptTouchEvents(true);
     // Create initial base layer
     addLayer("Layer 1");
     setActiveLayerIndex(0);
@@ -63,6 +69,11 @@ Canvas::Canvas(QQuickItem *parent)
             case ToolKind::Fill:   return static_cast<::Tool*>(m_fillTool.get());
             default: return static_cast<::Tool*>(&layer->engine());
         }
+    });
+
+    // Install window event filter when window becomes available
+    connect(this, &QQuickItem::windowChanged, this, [this](QQuickWindow *w){
+        if (w) w->installEventFilter(this);
     });
 }
 
@@ -103,41 +114,89 @@ int Canvas::activeTool() const {
     return static_cast<int>(m_toolMgr->activeTool());
 }
 
+bool Canvas::event(QEvent *event) {
+    switch (event->type()) {
+    case QEvent::TabletPress:
+    case QEvent::TabletMove:
+    case QEvent::TabletRelease:
+    case QEvent::TabletEnterProximity:
+    case QEvent::TabletLeaveProximity:
+        tabletEvent(static_cast<QTabletEvent*>(event));
+        return true;
+    default:
+        break;
+    }
+    return QQuickFramebufferObject::event(event);
+}
+
+void Canvas::tabletEvent(QTabletEvent *te) {
+    const QVector2D pos(te->position());
+    const float pressure = std::clamp((float)te->pressure(), 0.0f, 1.0f);
+    handleTablet(te->type(), pos, pressure);
+    te->accept();
+}
+
+void Canvas::touchEvent(QTouchEvent *event) {
+    if (!m_toolMgr) { event->ignore(); return; }
+    const auto &points = event->points();
+    if (points.isEmpty()) { event->ignore(); return; }
+    const auto &p = points.first();
+    const QVector2D pos(p.position());
+    m_cursorPos = pos;
+    emit cursorPosChanged();
+    const float pressure = std::clamp((float)p.pressure(), 0.0f, 1.0f);
+    const float size = m_brushSize * (0.1f + 0.9f * pressure);
+
+    switch (event->type()) {
+    case QEvent::TouchBegin:
+        updateDebug(QStringLiteral("TouchBegin"), pressure, size);
+        m_toolMgr->onPress(pos, m_brushColor, size);
+        break;
+    case QEvent::TouchUpdate:
+        updateDebug(QStringLiteral("TouchUpdate"), pressure, size);
+        m_toolMgr->setDynamicSize(size);
+        m_toolMgr->onMove(pos);
+        break;
+    case QEvent::TouchEnd:
+    case QEvent::TouchCancel:
+        updateDebug(event->type() == QEvent::TouchEnd ? QStringLiteral("TouchEnd") : QStringLiteral("TouchCancel"), pressure, size);
+        m_toolMgr->onRelease();
+        finalizePointerRelease();
+        break;
+    default: break;
+    }
+    update();
+    event->accept();
+}
+
 void Canvas::mousePressEvent(QMouseEvent *event) {
+    if (m_inTabletStroke) { event->ignore(); return; }
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
+    updateDebug(QStringLiteral("MousePress"), 1.0f, m_brushSize);
     if (m_toolMgr)
         m_toolMgr->onPress(QVector2D(event->position()), m_brushColor, m_brushSize);
     update();
 }
 
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
+    if (m_inTabletStroke) { event->ignore(); return; }
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
+    updateDebug(QStringLiteral("MouseMove"), 1.0f, m_brushSize);
     if (m_toolMgr)
         m_toolMgr->onMove(QVector2D(event->position()));
     update();
 }
 
 void Canvas::mouseReleaseEvent(QMouseEvent *event) {
+    if (m_inTabletStroke) { event->ignore(); return; }
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
+    updateDebug(QStringLiteral("MouseRelease"), 1.0f, m_brushSize);
     if (m_toolMgr)
         m_toolMgr->onRelease();
-    // If active tool produced a stroke (Brush or Eraser), record stroke operation for undo
-    if (activeLayer()) {
-        int tool = activeTool();
-        if (tool == Canvas::Brush || tool == Canvas::Eraser) {
-            const auto &strokes = activeLayer()->engine().strokes();
-            if (!strokes.isEmpty()) {
-                activeLayer()->recordStrokeOperation(strokes.last());
-                emit strokeCountChanged();
-            }
-        } else if (tool == Canvas::Fill) {
-            // Fill operation already recorded inside FillTool
-            emit strokeCountChanged(); // reflect raster change & history update
-        }
-    }
+    finalizePointerRelease();
     update();
 }
 
@@ -236,6 +295,82 @@ void Canvas::setActiveLayerIndex(int idx) {
 Layer* Canvas::activeLayer() const {
     if (m_activeLayerIndex < 0 || m_activeLayerIndex >= m_layers.size()) return nullptr;
     return m_layers[m_activeLayerIndex];
+}
+
+void Canvas::finalizePointerRelease() {
+    // If active tool produced a stroke (Brush or Eraser), record stroke operation for undo
+    if (activeLayer()) {
+        int tool = activeTool();
+        if (tool == Canvas::Brush || tool == Canvas::Eraser) {
+            const auto &strokes = activeLayer()->engine().strokes();
+            if (!strokes.isEmpty()) {
+                activeLayer()->recordStrokeOperation(strokes.last());
+                emit strokeCountChanged();
+            }
+        } else if (tool == Canvas::Fill) {
+            // Fill operation already recorded inside FillTool
+            emit strokeCountChanged(); // reflect raster change & history update
+        }
+    }
+}
+
+void Canvas::updateDebug(const QString &evt, float pressure, float size) {
+    m_debugEvent = evt;
+    m_debugPressure = pressure;
+    m_debugSize = size;
+    emit debugChanged();
+}
+
+void Canvas::handleTablet(QEvent::Type type, const QVector2D &pos, float pressure) {
+    m_cursorPos = pos;
+    emit cursorPosChanged();
+    const float size = m_brushSize * (0.1f + 0.9f * pressure);
+    switch (type) {
+    case QEvent::TabletPress:
+        m_inTabletStroke = true;
+        qInfo() << "TabletPress" << "pressure=" << pressure << "pos=" << pos;
+        updateDebug(QStringLiteral("TabletPress"), pressure, size);
+        if (m_toolMgr) m_toolMgr->onPress(pos, m_brushColor, size);
+        break;
+    case QEvent::TabletMove:
+        qInfo() << "TabletMove" << "pressure=" << pressure << "pos=" << pos;
+        updateDebug(QStringLiteral("TabletMove"), pressure, size);
+        if (m_toolMgr) { m_toolMgr->setDynamicSize(size); m_toolMgr->onMove(pos); }
+        break;
+    case QEvent::TabletRelease:
+        m_inTabletStroke = false;
+        qInfo() << "TabletRelease" << "pressure=" << pressure << "pos=" << pos;
+        updateDebug(QStringLiteral("TabletRelease"), pressure, size);
+        if (m_toolMgr) m_toolMgr->onRelease();
+        finalizePointerRelease();
+        break;
+    default:
+        break;
+    }
+    update();
+}
+
+bool Canvas::eventFilter(QObject *obj, QEvent *event) {
+    if (obj == window()) {
+        switch (event->type()) {
+        case QEvent::TabletPress:
+        case QEvent::TabletMove:
+        case QEvent::TabletRelease: {
+            auto *te = static_cast<QTabletEvent*>(event);
+            const QPointF winPos = te->position();
+            const QPointF itemPos = mapFromScene(winPos);
+            if (itemPos.x() >= 0 && itemPos.y() >= 0 && itemPos.x() <= width() && itemPos.y() <= height()) {
+                const float pressure = std::clamp((float)te->pressure(), 0.0f, 1.0f);
+                handleTablet(event->type(), QVector2D(itemPos), pressure);
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+    return QQuickFramebufferObject::eventFilter(obj, event);
 }
 bool Canvas::loadBaseImage(const QUrl &imageUrl) {
     if (!imageUrl.isValid()) return false;

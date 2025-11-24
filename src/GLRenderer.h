@@ -36,6 +36,7 @@ private:
     };
     QList<LayerSnap> m_layersSnap;    // stacking order: bottom -> top
     QList<QVector2D> m_currentPointsSnap;
+    QList<float> m_currentWidthsSnap;
     QColor m_currentColorSnap;
     float m_currentSizeSnap = 0.0f;
     BrushStroke::StrokeMode m_currentModeSnap = BrushStroke::Draw;
@@ -45,7 +46,6 @@ private:
     QColor m_brushColorSnap;
     float m_brushSizeSnap = 0.0f;
     qreal m_dpr = 1.0;
-
     // Performance caching
     // Cached per-layer rendered image (all committed strokes + raster) excluding any in-progress stroke.
     QVector<QImage> m_cachedLayerImages;

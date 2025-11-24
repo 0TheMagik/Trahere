@@ -4,7 +4,7 @@ project(Trahere VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Concurrent QuickDialogs2)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -58,6 +58,7 @@ target_link_libraries(appTrahere
     PRIVATE
         Qt6::Quick
         Qt6::QuickControls2
+        Qt6::QuickDialogs2
     Qt6::Concurrent
 )
 

@@ -44,12 +44,14 @@ void GLRenderer::synchronize(QQuickFramebufferObject *item) {
     if (active) {
         m_isDrawingSnap = active->engine().isDrawing();
         m_currentPointsSnap = active->engine().currentPoints();
+        m_currentWidthsSnap = active->engine().currentWidths();
         m_currentColorSnap = active->engine().currentColor();
         m_currentSizeSnap = active->engine().currentSize();
         m_currentModeSnap = active->engine().currentMode();
     } else {
         m_isDrawingSnap = false;
         m_currentPointsSnap.clear();
+        m_currentWidthsSnap.clear();
         m_currentModeSnap = BrushStroke::Draw;
     }
 
@@ -110,7 +112,7 @@ void GLRenderer::render() {
 
     // Prepare CPU buffer if needed (pixel size)
     if (m_buffer.size() != m_viewportSize) {
-        m_buffer = QImage(m_viewportSize, QImage::Format_RGBA8888);
+        m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
         m_buffer.fill(Qt::white);
         m_rebuildVersion = -1; // force rebuild
         m_bufferDirty = true;
@@ -274,7 +276,7 @@ void GLRenderer::render() {
     }
 
     // Function to stamp stroke into a layer image (supports erase)
-    auto stampStroke = [&](QImage &layerImg, const QList<QVector2D>& pts, const QColor &col, float size, BrushStroke::StrokeMode mode){
+    auto stampStroke = [&](QImage &layerImg, const QList<QVector2D>& pts, const QColor &col, float size, BrushStroke::StrokeMode mode, const QList<float>* widths){
             if (pts.isEmpty()) return;
             // Reuse previous interpolated logic: treat layerImg as buffer target
             QImage *targetPtr = &layerImg;
@@ -355,19 +357,33 @@ void GLRenderer::render() {
             };
             const int n = pts.size();
             if (n == 0) return;
-            float radiusPix = std::max(0.5f, size * 0.5f * (float)dpr);
+            auto radiusForIndex = [&](int idx)->float{
+                float s = size;
+                if (widths && idx >= 0 && idx < widths->size()) s = widths->at(idx);
+                return std::max(0.5f, s * 0.5f * (float)dpr);
+            };
             QVector2D p0 = pts.first() * (float)dpr;
-            paintCirclePixLayer(p0.x(), p0.y(), col, radiusPix);
+            paintCirclePixLayer(p0.x(), p0.y(), col, radiusForIndex(0));
             for (int i=1;i<n;++i){
                 QVector2D a = pts[i-1] * (float)dpr;
                 QVector2D b = pts[i] * (float)dpr;
                 QVector2D d = b - a;
                 float len = std::sqrt(d.lengthSquared());
-                if (len < 1e-3f) { paintCirclePixLayer(b.x(), b.y(), col, radiusPix); continue; }
+                float radiusA = radiusForIndex(i-1);
+                float radiusB = radiusForIndex(i);
+                if (len < 1e-3f) { paintCirclePixLayer(b.x(), b.y(), col, radiusB); continue; }
                 QVector2D dir = d / len;
-                float step = std::max(1.0f, radiusPix * 0.5f);
+                float step = std::max(1.0f, std::min(radiusA, radiusB) * 0.5f);
                 float t = 0.0f;
-                while (t <= len) { QVector2D p = a + dir * t; paintCirclePixLayer(p.x(), p.y(), col, radiusPix); t += step; }
+                while (t <= len) {
+                    float frac = (len > 0.0f ? t / len : 1.0f);
+                    float radiusPix = radiusA + (radiusB - radiusA) * frac;
+                    QVector2D p = a + dir * t;
+                    paintCirclePixLayer(p.x(), p.y(), col, radiusPix);
+                    t += step;
+                }
+                // Stamp end using radius at i
+                float radiusPix = radiusB;
                 paintCirclePixLayer(b.x(), b.y(), col, radiusPix);
             }
         };
@@ -381,7 +397,7 @@ void GLRenderer::render() {
             continue;
         }
         if (m_cachedLayerVersions[li] != currentLayerVersions[li]) {
-            QImage layerImg(m_viewportSize, QImage::Format_RGBA8888);
+            QImage layerImg(m_viewportSize, QImage::Format_ARGB32);
             layerImg.fill(Qt::transparent);
             // Raster base
             if (!ls.raster.isNull()) {
@@ -389,9 +405,10 @@ void GLRenderer::render() {
                 if (r.size() != m_viewportSize) r = r.scaled(m_viewportSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                 QPainter rp(&layerImg); rp.drawImage(0,0,r); rp.end();
             }
-            // Committed strokes
+            // Committed strokes (use per-point widths if recorded)
             for (const auto &stroke : ls.strokes) {
-                stampStroke(layerImg, stroke.points, stroke.color, stroke.size, stroke.mode);
+                const QList<float>* widths = stroke.widths.isEmpty() ? nullptr : &stroke.widths;
+                stampStroke(layerImg, stroke.points, stroke.color, stroke.size, stroke.mode, widths);
             }
             m_cachedLayerImages[li] = layerImg;
             m_cachedLayerVersions[li] = currentLayerVersions[li];
@@ -409,10 +426,10 @@ void GLRenderer::render() {
         if (m_canvas && m_canvas->hasBaseImage()) {
             QImage base = m_canvas->baseImage();
             if (base.size() != m_viewportSize) base = base.scaled(m_viewportSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-            if (base.format() != QImage::Format_RGBA8888) base = base.convertToFormat(QImage::Format_RGBA8888);
+            if (base.format() != QImage::Format_ARGB32) base = base.convertToFormat(QImage::Format_ARGB32);
             m_baseCompositeExcludingActive = base;
         } else {
-            m_baseCompositeExcludingActive = QImage(m_viewportSize, QImage::Format_RGBA8888);
+            m_baseCompositeExcludingActive = QImage(m_viewportSize, QImage::Format_ARGB32);
             m_baseCompositeExcludingActive.fill(Qt::white);
         }
         QPainter basep(&m_baseCompositeExcludingActive);
@@ -435,12 +452,12 @@ void GLRenderer::render() {
                 m_activeInProgressImage = m_cachedLayerImages[m_activeLayerIndexSnap];
             }
             if (m_activeInProgressImage.isNull()) {
-                m_activeInProgressImage = QImage(m_viewportSize, QImage::Format_RGBA8888);
+                m_activeInProgressImage = QImage(m_viewportSize, QImage::Format_ARGB32);
                 m_activeInProgressImage.fill(Qt::transparent);
             }
             m_lastInProgressStampedCount = 0;
             // Initialize final buffer composite now
-            if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_RGBA8888);
+            if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
             m_buffer.fill(Qt::transparent);
             QPainter initp(&m_buffer);
             if (!m_baseCompositeExcludingActive.isNull()) initp.drawImage(0,0,m_baseCompositeExcludingActive);
@@ -461,14 +478,26 @@ void GLRenderer::render() {
             }
             if (!segment.isEmpty()) {
                 // Stamp segment onto active layer clone
-                stampStroke(m_activeInProgressImage, segment, m_currentColorSnap, m_currentSizeSnap, m_currentModeSnap);
+                QList<float> segmentWidths;
+                if (!m_currentWidthsSnap.isEmpty()) {
+                    // Build widths matching the chosen point segment
+                    if (m_lastInProgressStampedCount == 0) {
+                        segmentWidths = m_currentWidthsSnap;
+                    } else {
+                        int start = m_lastInProgressStampedCount - 1;
+                        if (start < 0) start = 0;
+                        for (int i=start; i<m_currentWidthsSnap.size(); ++i) segmentWidths.append(m_currentWidthsSnap[i]);
+                    }
+                }
+                const QList<float>* widthsPtr = segmentWidths.isEmpty() ? nullptr : &segmentWidths;
+                stampStroke(m_activeInProgressImage, segment, m_currentColorSnap, m_currentSizeSnap, m_currentModeSnap, widthsPtr);
                 // If incremental composite valid, also stamp directly into final buffer
                 if (m_incrementalCompositeValid) {
-                    stampStroke(m_buffer, segment, m_currentColorSnap, m_currentSizeSnap, m_currentModeSnap);
+                    stampStroke(m_buffer, segment, m_currentColorSnap, m_currentSizeSnap, m_currentModeSnap, widthsPtr);
                     m_bufferDirty = true;
                 } else {
                     // Fallback: rebuild final composite this frame
-                    if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_RGBA8888);
+                    if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
                     m_buffer.fill(Qt::transparent);
                     QPainter finalRe(&m_buffer);
                     if (!m_baseCompositeExcludingActive.isNull()) finalRe.drawImage(0,0,m_baseCompositeExcludingActive);
@@ -484,7 +513,7 @@ void GLRenderer::render() {
 
     // Compose final buffer only if not drawing (or layers changed without incremental validity)
     if (!m_isDrawingSnap) {
-        if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_RGBA8888);
+        if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
         m_buffer.fill(Qt::transparent);
         QPainter finalComp(&m_buffer);
         if (!m_baseCompositeExcludingActive.isNull()) finalComp.drawImage(0,0,m_baseCompositeExcludingActive);
@@ -508,18 +537,18 @@ void GLRenderer::render() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_buffer.width(), m_buffer.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, m_buffer.constBits());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_buffer.width(), m_buffer.height(), 0, GL_BGRA, GL_UNSIGNED_BYTE, m_buffer.constBits());
         m_textureSize = m_buffer.size();
         m_bufferDirty = false;
     } else {
         glBindTexture(GL_TEXTURE_2D, m_texture);
         if (m_textureSize != m_buffer.size()) {
             // Reallocate texture on size change (e.g., fullscreen)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_buffer.width(), m_buffer.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, m_buffer.constBits());
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_buffer.width(), m_buffer.height(), 0, GL_BGRA, GL_UNSIGNED_BYTE, m_buffer.constBits());
             m_textureSize = m_buffer.size();
             m_bufferDirty = false;
         } else if (m_bufferDirty) {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_buffer.width(), m_buffer.height(), GL_RGBA, GL_UNSIGNED_BYTE, m_buffer.constBits());
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_buffer.width(), m_buffer.height(), GL_BGRA, GL_UNSIGNED_BYTE, m_buffer.constBits());
             m_bufferDirty = false;
         }
     }
@@ -533,13 +562,14 @@ void GLRenderer::render() {
         -1.f, -1.f,   0.f, 0.f, // bottom-left maps to (0,0)
          1.f, -1.f,   1.f, 0.f, // bottom-right maps to (1,0)
         -1.f,  1.f,   0.f, 1.f, // top-left maps to (0,1)
-         1.f,  1.f,   1.f, 1.f  // top-right maps to (1,1)
+         1.f,  1.f,   1.f, 1.f // top-right maps to (1,1)
     };
     // position (vec2) + uv (vec2)
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), verts);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), verts + 2);
+    // Set uniforms for transform
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
@@ -550,7 +580,9 @@ void GLRenderer::render() {
     if (m_isDrawingSnap && cursorLogical.x() >= 0 && cursorLogical.y() >= 0) {
         // Convert to pixel space for mapping, then to NDC; flip Y for GL
         QVector2D cursorPix = cursorLogical * (float)dpr;
-        float radiusPix = std::max(0.5f, m_canvas->brushSize() * 0.5f * (float)dpr);
+        float sizeLogical = m_isDrawingSnap ? (m_currentWidthsSnap.isEmpty() ? m_currentSizeSnap : m_currentWidthsSnap.constLast())
+                            : m_canvas->brushSize();
+        float radiusPix = std::max(0.5f, sizeLogical * 0.5f * (float)dpr);
         const int SEG = 64;
         QVector<GLfloat> ringNdc;
         ringNdc.reserve(SEG * 2);
@@ -580,5 +612,8 @@ void GLRenderer::render() {
     }
 
     m_program.release();
-    update(); // continuous repaint while drawing
+    // Request next frame only when needed (reduces idle CPU/GPU usage)
+    if (m_prevWasDrawing || m_isDrawingSnap || m_bufferDirty) {
+        update();
+    }
 }

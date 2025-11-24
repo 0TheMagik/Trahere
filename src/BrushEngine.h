@@ -8,6 +8,7 @@ struct BrushStroke {
     QColor color;
     float size;
     QList<QVector2D> points;
+    QList<float> widths; // optional per-point size (for pressure). If empty, use constant size.
     enum StrokeMode { Draw, Erase } mode = Draw;
 };
 
@@ -25,6 +26,7 @@ public:
     void onMove(const QVector2D &pos) override { addPoint(pos); }
     void onRelease() override { endStroke(); }
     bool isDrawing() const override { return m_drawing; }
+    void setDynamicSize(float size) override { setCurrentSize(size); }
 
     const QList<BrushStroke>& strokes() const { return m_strokes; }
 
@@ -46,9 +48,13 @@ public:
     // Expose current drawing state so renderer can draw in-progress stroke too
     // isDrawing override provided above for Tool API; kept here for convenience.
     const QList<QVector2D>& currentPoints() const { return m_currentStroke.points; }
+    const QList<float>& currentWidths() const { return m_currentStroke.widths; }
     const QColor& currentColor() const { return m_currentStroke.color; }
     float currentSize() const { return m_currentStroke.size; }
     BrushStroke::StrokeMode currentMode() const { return m_currentStroke.mode; }
+
+    // Adjust current in-progress stroke size (used for pen pressure)
+    void setCurrentSize(float size);
 
 private:
     QList<BrushStroke> m_strokes;

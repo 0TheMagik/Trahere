@@ -32,6 +32,10 @@ public:
         return false;
     }
 
+    void setDynamicSize(float size) override {
+        if (auto *eng = m_provider()) eng->setCurrentSize(size);
+    }
+
 private:
     EngineProvider m_provider;
 };

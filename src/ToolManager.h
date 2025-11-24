@@ -38,6 +38,10 @@ public:
         return false;
     }
 
+    void setDynamicSize(float size) {
+        if (Tool* t = resolve()) t->setDynamicSize(size);
+    }
+
 private:
     Tool* resolve() { return m_resolver ? m_resolver(m_active) : nullptr; }
 

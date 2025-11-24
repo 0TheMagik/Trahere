@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs 6.5
 import Trahere 1.0
 
 Window {
@@ -78,6 +79,8 @@ Window {
                     MenuItem { text: "Zoom In" }
                     MenuItem { text: "Zoom Out" }
                     MenuItem { text: "Reset Zoom" }
+                    MenuSeparator {}
+                    MenuItem { text: glCanvas.debugOverlay ? "Hide Debug Overlay" : "Show Debug Overlay"; onTriggered: glCanvas.debugOverlay = !glCanvas.debugOverlay }
                 }
 
                 Menu { title: "Image"
@@ -232,6 +235,7 @@ Window {
                         brushSize: 5
                         z: 1
                         Component.onCompleted: {
+                            glCanvas.debugOverlay = true
                             if (canvasWindow.layerPaths && canvasWindow.layerPaths.length > 0) {
                                 glCanvas.loadOraLayers(canvasWindow.layerPaths)
                             } else if (canvasWindow.imageSource !== "") {
@@ -241,6 +245,30 @@ Window {
                             } else if (canvasWindow.fallbackImageSource !== "") {
                                 glCanvas.loadBaseImage(canvasWindow.fallbackImageSource)
                             }
+                        }
+                    }
+                    // Debug Overlay
+                    Rectangle {
+                        id: debugOverlay
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 8
+                        z: 10
+                        color: "#66000000"
+                        radius: 4
+                        border.color: "#80ffffff"
+                        visible: glCanvas.debugOverlay
+                        property int pad: 6
+                        width: contentRow.implicitWidth + pad * 2
+                        height: contentRow.implicitHeight + pad * 2
+                        Row {
+                            id: contentRow
+                            anchors.fill: parent
+                            anchors.margins: debugOverlay.pad
+                            spacing: 10
+                            Text { text: "evt: " + glCanvas.debugEvent; color: "white"; font.pixelSize: 12 }
+                            Text { text: "pressure: " + glCanvas.debugPressure.toFixed(3); color: "white"; font.pixelSize: 12 }
+                            Text { text: "size: " + glCanvas.debugSize.toFixed(2) + " px"; color: "white"; font.pixelSize: 12 }
                         }
                     }
                 }
@@ -261,9 +289,7 @@ Window {
                         anchors.margins: 8
                         spacing: 6
 
-                        Row { id: headerRow; spacing: 6; height: 28; Text { text: "Layers"; font.bold: true; color: uiText }
-                            Button { id: addLayerBtn; text: "+"; width: 28; height: 24; onClicked: { const idx = glCanvas.addLayer(uniqueLayerName("Layer")); glCanvas.setLayer(idx) } }
-                        }
+                        Row { id: headerRow; spacing: 6; height: 28; Text { text: "Layers"; font.bold: true; color: uiText } }
 
                         // Brush / Fill color selection (moved above list for guaranteed visibility)
                         Rectangle {
@@ -273,49 +299,27 @@ Window {
                             radius: 4
                             color: uiPanel
                             border.color: uiBorder
-                            property real alphaVal: glCanvas.brushColor.a
                             Column {
                                 anchors.fill: parent
                                 anchors.margins: 6
-                                spacing: 6
+                                spacing: 8
                                 Row { spacing: 8
-                                    Text { text: "Color"; font.pixelSize: 12; color: uiText; font.bold: true }
+                                    Text { text: "Brush/Fill Color"; font.pixelSize: 12; color: uiText; font.bold: true }
                                     Rectangle { width: 32; height: 32; radius: 4; border.color: uiBorder; color: glCanvas.brushColor }
                                 }
-                                Flow { width: parent.width; spacing: 4
-                                    Repeater { model: ["#000000", "#404040", "#808080", "#FFFFFF", "#FF0000", "#FFA500", "#FFFF00", "#00FF00", "#00FFFF", "#0000FF", "#FF00FF", "#8B00FF"]
-                                        delegate: Rectangle {
-                                            width: 22; height: 22; radius: 4
-                                            color: modelData
-                                            border.color: uiBorder
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                onClicked: {
-                                                    // Explicit hex to RGB parsing to avoid any channel ordering surprises
-                                                    var hex = modelData
-                                                    if (hex.charAt(0) === '#') hex = hex.substring(1)
-                                                    if (hex.length === 3) { // expand shorthand #rgb
-                                                        hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2]
-                                                    }
-                                                    var r = parseInt(hex.substring(0,2),16)/255.0
-                                                    var g = parseInt(hex.substring(2,4),16)/255.0
-                                                    var b = parseInt(hex.substring(4,6),16)/255.0
-                                                    glCanvas.brushColor = Qt.rgba(r,g,b,colorPanel.alphaVal)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Row { spacing: 6
-                                    Text { text: "Alpha"; color: uiSubText }
-                                    Slider { id: alphaSlider; from:0; to:1; stepSize:0.01; value: colorPanel.alphaVal; width: 100; onMoved: { colorPanel.alphaVal = value; var c=glCanvas.brushColor; glCanvas.brushColor = Qt.rgba(c.r,c.g,c.b,value) } }
-                                    Text { text: Math.round(alphaSlider.value*100) + "%"; font.pixelSize: 11; color: uiSubText }
-                                }
                                 Row { spacing: 10
-                                    Text { text: Math.round(glCanvas.brushColor.r*255); color: uiText }
-                                    Text { text: Math.round(glCanvas.brushColor.g*255); color: uiText }
-                                    Text { text: Math.round(glCanvas.brushColor.b*255); color: uiText }
-                                    Text { text: Math.round(glCanvas.brushColor.a*100) + "%"; color: uiText }
+                                    Text { text:"R:" + Math.round(glCanvas.brushColor.r*255); color: uiText }
+                                    Text { text: "G:" + Math.round(glCanvas.brushColor.g*255); color: uiText }
+                                    Text { text: "B:" + Math.round(glCanvas.brushColor.b*255); color: uiText }
+                                    Text { text: "O:" + Math.round(glCanvas.brushColor.a*100) + "%"; color: uiText }
+                                }
+                                Row { spacing: 8
+                                    Button {
+                                        text: "Pick Color…"
+                                        width: 110
+                                        height: 26
+                                        onClicked: { colorDialog.selectedColor = glCanvas.brushColor; colorDialog.open() }
+                                    }
                                 }
                             }
                         }
@@ -359,7 +363,10 @@ Window {
                             }
                         }
 
-                        Row { id: footerRow; spacing: 6; height: 28; Button { text: "Remove"; enabled: glCanvas.layerCount > 1; onClicked: glCanvas.removeLayer(glCanvas.activeLayerIndex) } }
+                        Row { id: footerRow; spacing: 8; height: 32
+                            Button { id: addLayerBtn; text: "+"; width: 32; height: 28; onClicked: { const idx = glCanvas.addLayer(uniqueLayerName("Layer")); glCanvas.setLayer(idx) } }
+                            Button { text: "Remove"; width: 70; height: 28; enabled: glCanvas.layerCount > 1; onClicked: glCanvas.removeLayer(glCanvas.activeLayerIndex) }
+                        }
 
                     }
                 }
@@ -369,6 +376,18 @@ Window {
 
     // Custom color picker popup (replaces ColorDialog to avoid QuickDialogs dependency)
     // (Removed deprecated popup color picker; using inline palette)
+
+    // Standard Qt color dialog for picking colors (with alpha support)
+    ColorDialog {
+        id: colorDialog
+        title: "Choose Color"
+        selectedColor: glCanvas.brushColor
+        options: ColorDialog.ShowAlphaChannel
+        onAccepted: {
+            // Apply selected color to tools that use color (Brush and Fill use brushColor)
+            glCanvas.brushColor = selectedColor
+        }
+    }
 
     function uniqueLayerName(base, excludeIndex) {
         let names = [];
@@ -400,7 +419,7 @@ Window {
         background: Rectangle { color: uiPanel; border.color: uiBorder; radius: 6 }
         contentItem: Column {
             spacing: 8
-            Text { text: openMode === "all" ? "Save All Layers (.ora)" : "Save Strokes Only (.ora)"; font.pixelSize: 14; font.bold: true; color: uiText }
+            Text { text: savePopup.openMode === "all" ? "Save All Layers (.ora)" : "Save Strokes Only (.ora)"; font.pixelSize: 14; font.bold: true; color: uiText }
             TextField {
                 id: savePathField
                 placeholderText: "Enter output path (e.g. C:/path/file.ora)"
@@ -417,7 +436,7 @@ Window {
                         if (!localPath.toLowerCase().endsWith(".ora")) localPath += ".ora"
                         lastOraPath = localPath
                         var urlStr = "file:///" + localPath.replace(/\\/g,"/")
-                        var ok = (openMode === "all") ? glCanvas.saveOraAllLayers(urlStr) : glCanvas.saveOraStrokesOnly(urlStr)
+                        var ok = (savePopup.openMode === "all") ? glCanvas.saveOraAllLayers(urlStr) : glCanvas.saveOraStrokesOnly(urlStr)
                         console.log(ok ? (openMode === "all" ? "Saved ALL layers ORA:" : "Saved strokes-only ORA:") : "Failed save", localPath)
                         savePopup.close()
                     }

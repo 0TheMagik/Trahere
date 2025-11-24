@@ -1,10 +1,12 @@
 #pragma once
 #include <QQuickFramebufferObject>
+#include <QTabletEvent>
 #include <QVector2D>
 #include <QColor>
 #include <QList>
 #include <QQmlListProperty>
 #include <QImage>
+#include <QString>
 #include <memory>
 
 #include "ToolManager.h"
@@ -29,6 +31,11 @@ class Canvas : public QQuickFramebufferObject {
     Q_PROPERTY(bool hasContent READ hasContent NOTIFY strokeCountChanged)
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY strokeCountChanged)
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY strokeCountChanged)
+    // Debug overlay controls and data
+    Q_PROPERTY(bool debugOverlay READ debugOverlay WRITE setDebugOverlay NOTIFY debugOverlayChanged)
+    Q_PROPERTY(QString debugEvent READ debugEvent NOTIFY debugChanged)
+    Q_PROPERTY(float debugPressure READ debugPressure NOTIFY debugChanged)
+    Q_PROPERTY(float debugSize READ debugSize NOTIFY debugChanged)
     // Expose enum to QML for readability: Canvas.Brush, Canvas.Eraser, ...
 
 public:
@@ -61,6 +68,12 @@ public:
     Layer* activeLayer() const;
 
     QVector2D cursorPos() const { return m_cursorPos; }
+    // Debug accessors
+    bool debugOverlay() const { return m_debugOverlay; }
+    void setDebugOverlay(bool on) { if (m_debugOverlay != on) { m_debugOverlay = on; emit debugOverlayChanged(); } }
+    QString debugEvent() const { return m_debugEvent; }
+    float debugPressure() const { return m_debugPressure; }
+    float debugSize() const { return m_debugSize; }
 
     Q_INVOKABLE bool undoLastStroke();
     Q_INVOKABLE bool redoLastStroke();
@@ -101,11 +114,18 @@ signals:
     void layerCountChanged();
     void activeLayerIndexChanged();
     void activeToolChanged();
+    // Debug signals
+    void debugOverlayChanged();
+    void debugChanged();
 
 protected:
+    bool event(QEvent *event) override; // generic; tablet handled in tabletEvent
+    void tabletEvent(QTabletEvent *event) ;
+    void touchEvent(QTouchEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
     QColor m_brushColor;
@@ -117,4 +137,17 @@ private:
     std::unique_ptr<ToolManager> m_toolMgr;
     std::unique_ptr<EraserTool> m_eraserTool;
     std::unique_ptr<class FillTool> m_fillTool;
+
+    // Helpers for unified pointer release handling
+    void finalizePointerRelease();
+    void updateDebug(const QString &evt, float pressure, float size);
+    void handleTablet(QEvent::Type type, const QVector2D &pos, float pressure);
+
+    // Debug state
+    bool m_debugOverlay = false;
+    QString m_debugEvent;
+    float m_debugPressure = 0.0f;
+    float m_debugSize = 0.0f;
+    // Track active tablet stroke to ignore synthesized mouse
+    bool m_inTabletStroke = false;
 };
