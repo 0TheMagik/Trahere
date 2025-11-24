@@ -343,7 +343,8 @@ ApplicationWindow {
 
                             var comp = Qt.createComponent("CanvasWindow.qml")
                             if (comp.status === Component.Ready) {
-                                var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, layerPaths: paths })
+                                // Pass lastOraPath so the CanvasWindow enables plain 'Save' action.
+                                var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, layerPaths: paths, lastOraPath: model.filePath })
                             } else {
                                 console.log("Canvas component not ready:", comp.status, comp.errorString())
                             }

@@ -58,9 +58,10 @@ Window {
                             console.log(ok ? "Saved ALL layers ORA:" : "Failed multi-layer save", lastOraPath)
                         }
                     }
-                    MenuItem { text: "Save As..."; onTriggered: { savePopup.openMode = "all"; savePopup.open() } }
-                    MenuItem { text: "Save Strokes Only..."; onTriggered: { savePopup.openMode = "strokes"; savePopup.open() } }
-                    MenuItem { text: "Save All Layers As..."; onTriggered: { savePopup.openMode = "all"; savePopup.open() } }
+                    MenuItem { text: "Save As"; 
+                        onTriggered: { savePopup.openMode = "all"; savePopup.open() } 
+                        
+                        }
                     MenuSeparator {}
                     MenuItem { text: "Export..." }
                     MenuItem { text: "Close" }
