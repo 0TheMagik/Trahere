@@ -14,6 +14,7 @@ OraLoader :: OraLoader(QObject *parent) : QObject(parent) {}
 QString OraLoader :: loadOra(const QUrl &sourceUrl) {
     m_stackXml.clear();
     m_rootDir.clear();
+    m_imageSize = QSize();
     if (!sourceUrl.isValid()) {
         qWarning() << "OraLoader: invalid url";
         return{};
@@ -64,6 +65,28 @@ QString OraLoader :: loadOra(const QUrl &sourceUrl) {
     QString stack = outDir + "/stack.xml";
     if (QFileInfo::exists(stack)) {
         m_stackXml = stack;
+        // Parse <image w="" h=""> per OpenRaster spec
+        QFile f(stack);
+        if (f.open(QIODevice::ReadOnly)) {
+            const QString xml = QString::fromUtf8(f.readAll());
+            QRegularExpression reImgTag("<\\s*image[^>]*>", QRegularExpression::CaseInsensitiveOption);
+            auto m = reImgTag.match(xml);
+            if (m.hasMatch()) {
+                QString tag = m.captured(0);
+                QRegularExpression reW("\\bw\\s*=\\s*\"(\\d+)\"", QRegularExpression::CaseInsensitiveOption);
+                QRegularExpression reH("\\bh\\s*=\\s*\"(\\d+)\"", QRegularExpression::CaseInsensitiveOption);
+                auto mw = reW.match(tag);
+                auto mh = reH.match(tag);
+                bool okW=false, okH=false;
+                int w = mw.hasMatch() ? mw.captured(1).toInt(&okW) : 0;
+                int h = mh.hasMatch() ? mh.captured(1).toInt(&okH) : 0;
+                if (okW && okH && w>0 && h>0) {
+                    m_imageSize = QSize(w,h);
+                } else {
+                    qWarning() << "OraLoader: image size not found in stack.xml";
+                }
+            }
+        }
     } else {
         qWarning() << "OraLoader: missing stack.xml";
     }

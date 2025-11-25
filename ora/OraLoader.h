@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include <QObject>
+#include <QSize>
 #include <memory>
 
 class QUrl;              // fwd decl to avoid heavy includes in header
@@ -20,10 +21,14 @@ public:
     Q_INVOKABLE QString rootDir() const { return m_rootDir; }
     // Return absolute paths to layer image files referenced in stack.xml (if loaded)
     Q_INVOKABLE QStringList layerImagePaths() const;
+    // Image dimensions from <image w="" h=""> in stack.xml (0,0 if unknown)
+    Q_INVOKABLE int imageWidth() const { return m_imageSize.width(); }
+    Q_INVOKABLE int imageHeight() const { return m_imageSize.height(); }
 
 private:
     QString m_stackXml;
     QString m_rootDir;
+    QSize m_imageSize; // parsed from stack.xml
     // Holds the lifetime of the extracted .ora archive. Re-created on each loadOra() call.
     std::unique_ptr<QTemporaryDir> m_tmpDir; 
 };

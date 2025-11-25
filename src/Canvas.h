@@ -1,12 +1,17 @@
 #pragma once
 #include <QQuickFramebufferObject>
+#include <QTabletEvent>
 #include <QVector2D>
 #include <QColor>
 #include <QList>
 #include <QQmlListProperty>
 #include <QImage>
+#include <QSize>
+#include <QString>
+#include <memory>
 
-#include "BrushEngine.h"
+#include "ToolManager.h"
+#include "EraserTool.h"
 
 class GLRenderer;
 
@@ -21,9 +26,25 @@ class Canvas : public QQuickFramebufferObject {
     Q_PROPERTY(int layerCount READ layerCount NOTIFY layerCountChanged)
     Q_PROPERTY(int activeLayerIndex READ activeLayerIndex WRITE setActiveLayerIndex NOTIFY activeLayerIndexChanged)
     Q_PROPERTY(QQmlListProperty<Layer> layers READ layers NOTIFY layerCountChanged)
+    // Optional: expose active tool as integer (matches ToolKind ordinal)
+    Q_PROPERTY(int activeTool READ activeTool NOTIFY activeToolChanged)
+    // Expose derived state for UI enablement
+    Q_PROPERTY(bool hasContent READ hasContent NOTIFY strokeCountChanged)
+    Q_PROPERTY(bool canUndo READ canUndo NOTIFY strokeCountChanged)
+    Q_PROPERTY(bool canRedo READ canRedo NOTIFY strokeCountChanged)
+    // Debug overlay controls and data
+    Q_PROPERTY(bool debugOverlay READ debugOverlay WRITE setDebugOverlay NOTIFY debugOverlayChanged)
+    Q_PROPERTY(QString debugEvent READ debugEvent NOTIFY debugChanged)
+    Q_PROPERTY(float debugPressure READ debugPressure NOTIFY debugChanged)
+    Q_PROPERTY(float debugSize READ debugSize NOTIFY debugChanged)
+    // Expose enum to QML for readability: Canvas.Brush, Canvas.Eraser, ...
 
 public:
     explicit Canvas(QQuickItem *parent = nullptr);
+
+    // Tool enum exposed to QML
+    enum ToolType { Brush = 0, Eraser = 1, Fill = 2 };
+    Q_ENUM(ToolType)
 
     Renderer *createRenderer() const override;
 
@@ -48,13 +69,26 @@ public:
     Layer* activeLayer() const;
 
     QVector2D cursorPos() const { return m_cursorPos; }
+    // Debug accessors
+    bool debugOverlay() const { return m_debugOverlay; }
+    void setDebugOverlay(bool on) { if (m_debugOverlay != on) { m_debugOverlay = on; emit debugOverlayChanged(); } }
+    QString debugEvent() const { return m_debugEvent; }
+    float debugPressure() const { return m_debugPressure; }
+    float debugSize() const { return m_debugSize; }
 
     Q_INVOKABLE bool undoLastStroke();
+    Q_INVOKABLE bool redoLastStroke();
     Q_INVOKABLE bool removeStroke(int index);
     Q_INVOKABLE void clearAllStrokes();
+    Q_INVOKABLE bool hasContent() const; // strokes or raster in active layer
+    Q_INVOKABLE bool canUndo() const;    // wrapper for active layer
+    Q_INVOKABLE bool canRedo() const;    // wrapper for active layer
     Q_INVOKABLE int addLayer(const QString &name = QString()); // returns new layer index
     Q_INVOKABLE bool removeLayer(int index);
     Q_INVOKABLE void setLayer(int index) { setActiveLayerIndex(index); }
+    // Tool management
+    Q_INVOKABLE void setActiveTool(int kind);
+    Q_INVOKABLE int activeTool() const;
     // Load a base image (PNG/JPEG) that will be drawn under strokes
     Q_INVOKABLE bool loadBaseImage(const QUrl &imageUrl);
     // Save current composited canvas (base + strokes) to .ora
@@ -67,8 +101,14 @@ public:
     Q_INVOKABLE bool saveOraAllLayers(const QUrl &destinationUrl);
     // Export composited image as QImage (for testing / other saves)
     Q_INVOKABLE QImage compositedImage() const;
+    // Export flattened (background putih) PNG dengan semua layer & base image
+    Q_INVOKABLE bool exportPng(const QUrl &destinationUrl);
     // Load raster layers from extracted ORA layer image paths (absolute).
     Q_INVOKABLE bool loadOraLayers(const QStringList &layerImagePaths);
+    // Explicitly set the intended document size (pixels) for saving/export
+    Q_INVOKABLE void setDocumentSize(int w, int h) { m_documentSize = QSize(qMax(1, w), qMax(1, h)); }
+    Q_INVOKABLE int documentWidth() const { return m_documentSize.width(); }
+    Q_INVOKABLE int documentHeight() const { return m_documentSize.height(); }
 
     const QImage &baseImage() const { return m_baseImage; }
     bool hasBaseImage() const { return !m_baseImage.isNull(); }
@@ -80,11 +120,19 @@ signals:
     void cursorPosChanged();
     void layerCountChanged();
     void activeLayerIndexChanged();
+    void activeToolChanged();
+    // Debug signals
+    void debugOverlayChanged();
+    void debugChanged();
 
 protected:
+    bool event(QEvent *event) override; // generic; tablet handled in tabletEvent
+    void tabletEvent(QTabletEvent *event) ;
+    void touchEvent(QTouchEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
     QColor m_brushColor;
@@ -93,4 +141,23 @@ private:
     QList<Layer*> m_layers;
     int m_activeLayerIndex = -1;
     QImage m_baseImage;
+    std::unique_ptr<ToolManager> m_toolMgr;
+    std::unique_ptr<EraserTool> m_eraserTool;
+    std::unique_ptr<class FillTool> m_fillTool;
+
+    // Helpers for unified pointer release handling
+    void finalizePointerRelease();
+    void updateDebug(const QString &evt, float pressure, float size);
+    void handleTablet(QEvent::Type type, const QVector2D &pos, float pressure);
+
+    // Debug state
+    bool m_debugOverlay = false;
+    QString m_debugEvent;
+    float m_debugPressure = 0.0f;
+    float m_debugSize = 0.0f;
+    // Track active tablet stroke to ignore synthesized mouse
+    bool m_inTabletStroke = false;
+
+    // Logical document size (pixels). Used for saving/export to avoid using current view size.
+    QSize m_documentSize;
 };

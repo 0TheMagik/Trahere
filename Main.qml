@@ -211,14 +211,17 @@ ApplicationWindow {
 
             // Refresh Button (red box style)
             Rectangle {
+                id: refreshButtonRect
                 Layout.preferredWidth: 44
                 Layout.preferredHeight: 44
-                color: refreshState.isRefreshing ? "#DCDCDD" : "#DCDCDD"
+                // Dynamic hover/refresh color binding
+                color: refreshState.isRefreshing ? "#DCDCDD" : (refreshMouseArea.containsMouse ? "#E0E0E0" : "#DCDCDD")
                 radius: 4
                 border.color: refreshState.isRefreshing ? "#DCDCDD" : "#DCDCDD"
                 border.width: 2
 
                 MouseArea {
+                    id: refreshMouseArea
                     anchors.fill: parent
                     hoverEnabled: true
                     enabled: !refreshState.isRefreshing
@@ -246,16 +249,7 @@ ApplicationWindow {
                     }
                 }
 
-                states: [
-                    State {
-                        name: "hovered"
-                        when: mouseArea.containsMouse && !refreshState.isRefreshing
-                        PropertyChanges {
-                            target: parent
-                            color: "#DCDCDD"
-                        }
-                    }
-                ]
+                // No imperative color updates needed; binding above reacts automatically
             }
         }
     }
@@ -308,13 +302,13 @@ ApplicationWindow {
             spacing: 6
 
             // Title (kept visually separate but not boxed)
+            // Removed anchors.* inside layout-managed item to avoid warnings
             Text {
                 text: "Recent Files"
                 font.pixelSize: 16
                 font.bold: true
                 color: "#31363b"
-                anchors.left: parent.left
-                anchors.leftMargin: 8
+                Layout.alignment: Qt.AlignLeft
             }
 
             // ListView for recent files (flat rows with separators)
@@ -349,7 +343,8 @@ ApplicationWindow {
 
                             var comp = Qt.createComponent("CanvasWindow.qml")
                             if (comp.status === Component.Ready) {
-                                var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, layerPaths: paths })
+                                // Pass lastOraPath so the CanvasWindow enables plain 'Save' action.
+                                var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, layerPaths: paths, lastOraPath: model.filePath })
                             } else {
                                 console.log("Canvas component not ready:", comp.status, comp.errorString())
                             }
