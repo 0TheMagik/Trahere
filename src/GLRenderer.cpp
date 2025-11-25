@@ -60,6 +60,8 @@ void GLRenderer::synchronize(QQuickFramebufferObject *item) {
     m_brushColorSnap = canvas->brushColor();
     m_brushSizeSnap = canvas->brushSize();
     m_dpr = (canvas->window() ? canvas->window()->effectiveDevicePixelRatio() : 1.0);
+    m_panXSnap = (float)canvas->panX();
+    m_panYSnap = (float)canvas->panY();
 }
 
 void GLRenderer::render() {
@@ -557,12 +559,15 @@ void GLRenderer::render() {
     m_program.bind();
     glBindTexture(GL_TEXTURE_2D, m_texture);
     // Quad with UVs matching QImage's top-left origin (no vertical flip)
+    // Apply pan as NDC offset (logical units -> pixels -> NDC)
+    float dxNdc = (m_viewportSize.width() > 0 ? (2.0f * (m_panXSnap * (float)m_dpr) / (float)m_viewportSize.width()) : 0.0f);
+    float dyNdc = (m_viewportSize.height() > 0 ? (2.0f * (m_panYSnap * (float)m_dpr) / (float)m_viewportSize.height()) : 0.0f);
     GLfloat verts[] = {
         //  x     y      u    v
-        -1.f, -1.f,   0.f, 0.f, // bottom-left maps to (0,0)
-         1.f, -1.f,   1.f, 0.f, // bottom-right maps to (1,0)
-        -1.f,  1.f,   0.f, 1.f, // top-left maps to (0,1)
-         1.f,  1.f,   1.f, 1.f // top-right maps to (1,1)
+        -1.f + dxNdc, -1.f + dyNdc,   0.f, 0.f, // bottom-left
+         1.f + dxNdc, -1.f + dyNdc,   1.f, 0.f, // bottom-right
+        -1.f + dxNdc,  1.f + dyNdc,   0.f, 1.f, // top-left
+         1.f + dxNdc,  1.f + dyNdc,   1.f, 1.f  // top-right
     };
     // position (vec2) + uv (vec2)
     glEnableVertexAttribArray(0);

@@ -14,6 +14,7 @@
 #include "EraserTool.h"
 
 class GLRenderer;
+class QWheelEvent; // forward declaration
 
 class Layer; // forward declaration
 
@@ -32,6 +33,11 @@ class Canvas : public QQuickFramebufferObject {
     Q_PROPERTY(bool hasContent READ hasContent NOTIFY strokeCountChanged)
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY strokeCountChanged)
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY strokeCountChanged)
+    // Zoom view (visual scale only; stroke coordinates remain logical)
+    Q_PROPERTY(float zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
+    // Panning (visual translation)
+    Q_PROPERTY(float panX READ panX WRITE setPanX NOTIFY panChanged)
+    Q_PROPERTY(float panY READ panY WRITE setPanY NOTIFY panChanged)
     // Debug overlay controls and data
     Q_PROPERTY(bool debugOverlay READ debugOverlay WRITE setDebugOverlay NOTIFY debugOverlayChanged)
     Q_PROPERTY(QString debugEvent READ debugEvent NOTIFY debugChanged)
@@ -105,6 +111,18 @@ public:
     Q_INVOKABLE bool exportPng(const QUrl &destinationUrl);
     // Load raster layers from extracted ORA layer image paths (absolute).
     Q_INVOKABLE bool loadOraLayers(const QStringList &layerImagePaths);
+    // Zoom accessors
+    float zoom() const { return m_zoom; }
+    Q_INVOKABLE void setZoom(float z);
+    Q_INVOKABLE void zoomIn();
+    Q_INVOKABLE void zoomOut();
+    // Pan accessors
+    float panX() const { return m_panX; }
+    float panY() const { return m_panY; }
+    Q_INVOKABLE void setPanX(float x);
+    Q_INVOKABLE void setPanY(float y);
+    Q_INVOKABLE void resetView() { setZoom(1.0f); setPanX(0.0f); setPanY(0.0f); }
+    
     // Explicitly set the intended document size (pixels) for saving/export
     Q_INVOKABLE void setDocumentSize(int w, int h) { m_documentSize = QSize(qMax(1, w), qMax(1, h)); }
     Q_INVOKABLE int documentWidth() const { return m_documentSize.width(); }
@@ -121,6 +139,8 @@ signals:
     void layerCountChanged();
     void activeLayerIndexChanged();
     void activeToolChanged();
+    void zoomChanged();
+    void panChanged();
     // Debug signals
     void debugOverlayChanged();
     void debugChanged();
@@ -132,6 +152,7 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
@@ -144,6 +165,17 @@ private:
     std::unique_ptr<ToolManager> m_toolMgr;
     std::unique_ptr<EraserTool> m_eraserTool;
     std::unique_ptr<class FillTool> m_fillTool;
+
+    // Zoom state
+    float m_zoom = 1.0f;            // current zoom factor
+    float m_initialPinchDist = 0.0f; // distance at pinch begin
+    float m_initialZoom = 1.0f;      // zoom at pinch begin
+    bool m_pinchActive = false;
+    // Pan state (logical units)
+    float m_panX = 0.0f;
+    float m_panY = 0.0f;
+    bool m_isPanning = false;
+    QVector2D m_lastPanPos;
 
     // Helpers for unified pointer release handling
     void finalizePointerRelease();

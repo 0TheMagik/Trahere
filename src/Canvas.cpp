@@ -77,6 +77,23 @@ Canvas::Canvas(QQuickItem *parent)
     });
 }
 
+// Zoom helpers
+void Canvas::setZoom(float z) {
+    float clamped = std::clamp(z, 0.1f, 10.0f); // reasonable bounds
+    if (qFuzzyCompare(clamped, m_zoom)) return;
+    m_zoom = clamped;
+    setScale(m_zoom); // leverage QQuickItem transform
+    emit zoomChanged();
+}
+
+void Canvas::zoomIn() {
+    setZoom(m_zoom * 1.2f);
+}
+
+void Canvas::zoomOut() {
+    setZoom(m_zoom / 1.2f);
+}
+
 QQuickFramebufferObject::Renderer *Canvas::createRenderer() const {
     return new GLRenderer(const_cast<Canvas*>(this));
 }
@@ -107,6 +124,21 @@ void Canvas::setActiveTool(int kind) {
     if (static_cast<int>(m_toolMgr->activeTool()) == static_cast<int>(tk)) return;
     m_toolMgr->setActiveTool(tk);
     emit activeToolChanged();
+}
+
+// Pan setters
+void Canvas::setPanX(float x) {
+    if (qFuzzyCompare(m_panX, x)) return;
+    m_panX = x;
+    emit panChanged();
+    update();
+}
+
+void Canvas::setPanY(float y) {
+    if (qFuzzyCompare(m_panY, y)) return;
+    m_panY = y;
+    emit panChanged();
+    update();
 }
 
 int Canvas::activeTool() const {
@@ -140,6 +172,37 @@ void Canvas::touchEvent(QTouchEvent *event) {
     if (!m_toolMgr) { event->ignore(); return; }
     const auto &points = event->points();
     if (points.isEmpty()) { event->ignore(); return; }
+    
+    // Pinch zoom handling (two-finger gesture)
+    if (points.size() >= 2) {
+        const auto &p1 = points.at(0);
+        const auto &p2 = points.at(1);
+        float dist = (p1.position() - p2.position()).manhattanLength();
+        switch (event->type()) {
+        case QEvent::TouchBegin:
+            m_pinchActive = true;
+            m_initialPinchDist = dist;
+            m_initialZoom = m_zoom;
+            break;
+        case QEvent::TouchUpdate:
+            if (m_pinchActive && m_initialPinchDist > 0.0f) {
+                float factor = dist / m_initialPinchDist;
+                setZoom(m_initialZoom * factor);
+            }
+            break;
+        case QEvent::TouchEnd:
+        case QEvent::TouchCancel:
+            m_pinchActive = false;
+            break;
+        default: break;
+        }
+        // If pinch active, do not draw strokes with these touches
+        if (m_pinchActive) {
+            event->accept();
+            return;
+        }
+    }
+    
     const auto &p = points.first();
     const QVector2D pos(p.position());
     m_cursorPos = pos;
@@ -150,12 +213,12 @@ void Canvas::touchEvent(QTouchEvent *event) {
     switch (event->type()) {
     case QEvent::TouchBegin:
         updateDebug(QStringLiteral("TouchBegin"), pressure, size);
-        m_toolMgr->onPress(pos, m_brushColor, size);
+        m_toolMgr->onPress(pos - QVector2D(m_panX, m_panY), m_brushColor, size);
         break;
     case QEvent::TouchUpdate:
         updateDebug(QStringLiteral("TouchUpdate"), pressure, size);
         m_toolMgr->setDynamicSize(size);
-        m_toolMgr->onMove(pos);
+        m_toolMgr->onMove(pos - QVector2D(m_panX, m_panY));
         break;
     case QEvent::TouchEnd:
     case QEvent::TouchCancel:
@@ -169,28 +232,64 @@ void Canvas::touchEvent(QTouchEvent *event) {
     event->accept();
 }
 
+void Canvas::wheelEvent(QWheelEvent *event) {
+    // Zoom with Ctrl + wheel (common pattern)
+    if (event->modifiers() & Qt::ControlModifier) {
+        const int deltaY = event->angleDelta().y();
+        if (deltaY != 0) {
+            float stepFactor = 1.1f; // base factor per notch
+            if (deltaY > 0) zoomIn(); else zoomOut();
+            event->accept();
+            return;
+        }
+    }
+    QQuickFramebufferObject::wheelEvent(event);
+}
+
 void Canvas::mousePressEvent(QMouseEvent *event) {
     if (m_inTabletStroke) { event->ignore(); return; }
+    if (event->button() == Qt::MiddleButton) {
+        m_isPanning = true;
+        m_lastPanPos = QVector2D(event->position());
+        event->accept();
+        return;
+    }
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
     updateDebug(QStringLiteral("MousePress"), 1.0f, m_brushSize);
     if (m_toolMgr)
-        m_toolMgr->onPress(QVector2D(event->position()), m_brushColor, m_brushSize);
+        m_toolMgr->onPress(QVector2D(event->position()) - QVector2D(m_panX, m_panY), m_brushColor, m_brushSize);
     update();
 }
 
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
     if (m_inTabletStroke) { event->ignore(); return; }
+    if (m_isPanning || (event->buttons() & Qt::MiddleButton)) {
+        QVector2D cur(event->position());
+        QVector2D delta = cur - m_lastPanPos;
+        m_lastPanPos = cur;
+        m_panX += delta.x();
+        m_panY += delta.y();
+        emit panChanged();
+        update();
+        event->accept();
+        return;
+    }
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
     updateDebug(QStringLiteral("MouseMove"), 1.0f, m_brushSize);
     if (m_toolMgr)
-        m_toolMgr->onMove(QVector2D(event->position()));
+        m_toolMgr->onMove(QVector2D(event->position()) - QVector2D(m_panX, m_panY));
     update();
 }
 
 void Canvas::mouseReleaseEvent(QMouseEvent *event) {
     if (m_inTabletStroke) { event->ignore(); return; }
+    if (event->button() == Qt::MiddleButton) {
+        m_isPanning = false;
+        event->accept();
+        return;
+    }
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
     updateDebug(QStringLiteral("MouseRelease"), 1.0f, m_brushSize);
@@ -330,12 +429,12 @@ void Canvas::handleTablet(QEvent::Type type, const QVector2D &pos, float pressur
         m_inTabletStroke = true;
         qInfo() << "TabletPress" << "pressure=" << pressure << "pos=" << pos;
         updateDebug(QStringLiteral("TabletPress"), pressure, size);
-        if (m_toolMgr) m_toolMgr->onPress(pos, m_brushColor, size);
+        if (m_toolMgr) m_toolMgr->onPress(pos - QVector2D(m_panX, m_panY), m_brushColor, size);
         break;
     case QEvent::TabletMove:
         qInfo() << "TabletMove" << "pressure=" << pressure << "pos=" << pos;
         updateDebug(QStringLiteral("TabletMove"), pressure, size);
-        if (m_toolMgr) { m_toolMgr->setDynamicSize(size); m_toolMgr->onMove(pos); }
+        if (m_toolMgr) { m_toolMgr->setDynamicSize(size); m_toolMgr->onMove(pos - QVector2D(m_panX, m_panY)); }
         break;
     case QEvent::TabletRelease:
         m_inTabletStroke = false;
