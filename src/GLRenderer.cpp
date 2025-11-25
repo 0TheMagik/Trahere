@@ -581,7 +581,7 @@ void GLRenderer::render() {
 
     // Brush preview circle: outline-only (1px), center transparent
     // Show only while drawing (mouse pressed)
-    QVector2D cursorLogical = m_cursorPosSnap;
+    QVector2D cursorLogical = m_cursorPosSnap - QVector2D(m_panXSnap, m_panYSnap);
     if (m_isDrawingSnap && cursorLogical.x() >= 0 && cursorLogical.y() >= 0) {
         // Convert to pixel space for mapping, then to NDC; flip Y for GL
         QVector2D cursorPix = cursorLogical * (float)dpr;

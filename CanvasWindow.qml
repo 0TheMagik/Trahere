@@ -76,9 +76,9 @@ Window {
                 }
 
                 Menu { title: "View"
-                    MenuItem { text: "Zoom In" }
-                    MenuItem { text: "Zoom Out" }
-                    MenuItem { text: "Reset Zoom" }
+                    MenuItem { text: "Zoom In"; onTriggered: glCanvas.zoomIn() }
+                    MenuItem { text: "Zoom Out"; onTriggered: glCanvas.zoomOut() }
+                    MenuItem { text: "Reset Zoom"; onTriggered: glCanvas.resetView() }
                     MenuSeparator {}
                     MenuItem { text: glCanvas.debugOverlay ? "Hide Debug Overlay" : "Show Debug Overlay"; onTriggered: glCanvas.debugOverlay = !glCanvas.debugOverlay }
                 }
@@ -281,6 +281,7 @@ Window {
                             Text { text: "evt: " + glCanvas.debugEvent; color: "white"; font.pixelSize: 12 }
                             Text { text: "pressure: " + glCanvas.debugPressure.toFixed(3); color: "white"; font.pixelSize: 12 }
                             Text { text: "size: " + glCanvas.debugSize.toFixed(2) + " px"; color: "white"; font.pixelSize: 12 }
+                            Text { text: "zoom: " + (glCanvas.zoom * 100).toFixed(0) + "%"; color: "white"; font.pixelSize: 12 }
                         }
                     }
                 }

@@ -14,8 +14,10 @@
 #include <QTouchEvent>
 #include <QQuickWindow>
 #include <algorithm>
+#include <cmath>
 #include "Layer.h"
 #include "FillTool.h"
+#include <QtGui/QWheelEvent>
 Canvas::~Canvas() {
     for (Layer* l : m_layers) {
         if (l) l->deleteLater();
@@ -177,7 +179,7 @@ void Canvas::touchEvent(QTouchEvent *event) {
     if (points.size() >= 2) {
         const auto &p1 = points.at(0);
         const auto &p2 = points.at(1);
-        float dist = (p1.position() - p2.position()).manhattanLength();
+        float dist = QVector2D(p1.position() - p2.position()).length();
         switch (event->type()) {
         case QEvent::TouchBegin:
             m_pinchActive = true;
@@ -237,8 +239,8 @@ void Canvas::wheelEvent(QWheelEvent *event) {
     if (event->modifiers() & Qt::ControlModifier) {
         const int deltaY = event->angleDelta().y();
         if (deltaY != 0) {
-            float stepFactor = 1.1f; // base factor per notch
-            if (deltaY > 0) zoomIn(); else zoomOut();
+            float factor = std::pow(1.2f, (float)deltaY / 120.0f);
+            setZoom(m_zoom * factor);
             event->accept();
             return;
         }
