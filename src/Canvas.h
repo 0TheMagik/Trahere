@@ -6,6 +6,7 @@
 #include <QList>
 #include <QQmlListProperty>
 #include <QImage>
+#include <QSize>
 #include <QString>
 #include <memory>
 
@@ -104,6 +105,10 @@ public:
     Q_INVOKABLE bool exportPng(const QUrl &destinationUrl);
     // Load raster layers from extracted ORA layer image paths (absolute).
     Q_INVOKABLE bool loadOraLayers(const QStringList &layerImagePaths);
+    // Explicitly set the intended document size (pixels) for saving/export
+    Q_INVOKABLE void setDocumentSize(int w, int h) { m_documentSize = QSize(qMax(1, w), qMax(1, h)); }
+    Q_INVOKABLE int documentWidth() const { return m_documentSize.width(); }
+    Q_INVOKABLE int documentHeight() const { return m_documentSize.height(); }
 
     const QImage &baseImage() const { return m_baseImage; }
     bool hasBaseImage() const { return !m_baseImage.isNull(); }
@@ -152,4 +157,7 @@ private:
     float m_debugSize = 0.0f;
     // Track active tablet stroke to ignore synthesized mouse
     bool m_inTabletStroke = false;
+
+    // Logical document size (pixels). Used for saving/export to avoid using current view size.
+    QSize m_documentSize;
 };

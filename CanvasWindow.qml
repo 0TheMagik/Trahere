@@ -236,7 +236,19 @@ Window {
                         z: 1
                         Component.onCompleted: {
                             glCanvas.debugOverlay = true
+                            // For newly created docs (no layerPaths), set document size from initialWidth/Height.
+                            // When opening existing ORA (layerPaths provided), don't override; size will come from layers/stack.
+                            if ((!canvasWindow.layerPaths || canvasWindow.layerPaths.length === 0)
+                                && canvasWindow.initialWidth > 0 && canvasWindow.initialHeight > 0) {
+                                glCanvas.setDocumentSize(canvasWindow.initialWidth, canvasWindow.initialHeight)
+                            }
                             if (canvasWindow.layerPaths && canvasWindow.layerPaths.length > 0) {
+                                // Opening ORA: set document size from stack.xml (w,h) if available
+                                var w = oraLoader.imageWidth()
+                                var h = oraLoader.imageHeight()
+                                if (w > 0 && h > 0) {
+                                    glCanvas.setDocumentSize(w, h)
+                                }
                                 glCanvas.loadOraLayers(canvasWindow.layerPaths)
                             } else if (canvasWindow.imageSource !== "") {
                                 if (!glCanvas.loadBaseImage(canvasWindow.imageSource) && canvasWindow.fallbackImageSource !== "") {

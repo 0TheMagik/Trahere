@@ -381,16 +381,32 @@ bool Canvas::loadBaseImage(const QUrl &imageUrl) {
         return false;
     }
     m_baseImage = img.convertToFormat(QImage::Format_RGBA8888);
+    // Initialize/override document size from base image if not set yet
+    if (m_documentSize.width() <= 0 || m_documentSize.height() <= 0) {
+        m_documentSize = m_baseImage.size();
+    }
     update();
     return true;
 }
 
 // Duplicate lightweight rasterization similar to GLRenderer (white bg + base image + strokes)
 QImage Canvas::compositedImage() const {
-    // Determine target size prioritizing item size then base image then fallback
-    QSize targetSize = QSize(int(width()), int(height()));
+    // Determine target size prioritizing document size, then base/layer sizes, then view size, then fallback
+    QSize targetSize = m_documentSize;
     if (targetSize.width() <= 0 || targetSize.height() <= 0) {
-        targetSize = !m_baseImage.isNull() ? m_baseImage.size() : QSize(512,512);
+        if (!m_baseImage.isNull()) {
+            targetSize = m_baseImage.size();
+        } else {
+            for (Layer* l : m_layers) {
+                if (l && l->hasRaster()) { targetSize = l->raster().size(); break; }
+            }
+        }
+    }
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+        targetSize = QSize(int(width()), int(height()));
+    }
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+        targetSize = QSize(512,512);
     }
     QImage buffer(targetSize, QImage::Format_RGBA8888);
     // Start with opaque white background (similar to renderer) then draw base image if present
@@ -453,10 +469,16 @@ bool Canvas::saveOra(const QUrl &destinationUrl) {
 }
 
 bool Canvas::saveOraStrokesOnly(const QUrl &destinationUrl) {
-    // Determine size; no base image compositing (transparent background)
-    QSize targetSize = QSize(int(width()), int(height()));
-    if (targetSize.width() <= 0 || targetSize.height() <= 0)
-        targetSize = !m_baseImage.isNull() ? m_baseImage.size() : QSize(512,512);
+    // Determine size; prefer document size; no base image compositing (transparent background)
+    QSize targetSize = m_documentSize;
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+        if (!m_baseImage.isNull()) targetSize = m_baseImage.size();
+        if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+            for (Layer* l : m_layers) { if (l && l->hasRaster()) { targetSize = l->raster().size(); break; } }
+        }
+    }
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) targetSize = QSize(int(width()), int(height()));
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) targetSize = QSize(512,512);
     QImage buffer(targetSize, QImage::Format_RGBA8888);
     buffer.fill(Qt::transparent);
     QPainter painter(&buffer); painter.setRenderHint(QPainter::Antialiasing, true);
@@ -497,8 +519,15 @@ bool Canvas::saveOraStrokesOnly(const QUrl &destinationUrl) {
 
 bool Canvas::saveOraAllLayers(const QUrl &destinationUrl) {
     if (!destinationUrl.isValid()) return false;
-    // Determine target size (use base image size if available else canvas item size else fallback)
-    QSize targetSize = !m_baseImage.isNull() ? m_baseImage.size() : QSize(int(width()), int(height()));
+    // Determine target size (prefer document size, then base/layer size, then view size, then fallback)
+    QSize targetSize = m_documentSize;
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+        if (!m_baseImage.isNull()) targetSize = m_baseImage.size();
+        if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+            for (Layer* l : m_layers) { if (l && l->hasRaster()) { targetSize = l->raster().size(); break; } }
+        }
+    }
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) targetSize = QSize(int(width()), int(height()));
     if (targetSize.width() <= 0 || targetSize.height() <= 0) targetSize = QSize(512, 512);
 
     QList<QImage> layerImages; // first element will be top-most for ORA
@@ -628,6 +657,9 @@ bool Canvas::loadOraLayers(const QStringList &layerImagePaths) {
         layer->setName(QString("Layer %1").arg(m_layers.size()));
         layer->setRaster(img.convertToFormat(QImage::Format_RGBA8888));
         m_layers.append(layer);
+        if (m_documentSize.width() <= 0 || m_documentSize.height() <= 0) {
+            m_documentSize = img.size();
+        }
     }
     emit layerCountChanged();
     if (!m_layers.isEmpty()) {
