@@ -46,6 +46,9 @@ private:
     QColor m_brushColorSnap;
     float m_brushSizeSnap = 0.0f;
     qreal m_dpr = 1.0;
+    // View transform snapshot
+    float m_panXSnap = 0.0f;
+    float m_panYSnap = 0.0f;
     // Performance caching
     // Cached per-layer rendered image (all committed strokes + raster) excluding any in-progress stroke.
     QVector<QImage> m_cachedLayerImages;
