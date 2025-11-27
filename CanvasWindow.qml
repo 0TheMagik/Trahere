@@ -44,6 +44,7 @@ Window {
 
             MenuBar {
                 id: topMenuBar
+                z: 60
                 width: parent.width
                 background: Rectangle { color: uiPanel; border.color: uiBorder; height: parent.height }
 
@@ -83,10 +84,7 @@ Window {
                     MenuItem { text: glCanvas.debugOverlay ? "Hide Debug Overlay" : "Show Debug Overlay"; onTriggered: glCanvas.debugOverlay = !glCanvas.debugOverlay }
                 }
 
-                Menu { title: "Image"
-                    MenuItem { text: "Crop" }
-                    MenuItem { text: "Resize" }
-                }
+                // Removed Image menu per request
 
                 Menu { title: "Layer"
                     MenuItem { text: "New Layer"; onTriggered: { const idx = glCanvas.addLayer(uniqueLayerName("Layer")); glCanvas.setLayer(idx) } }
@@ -120,6 +118,8 @@ Window {
                     id: brushControlsRow
                     anchors.fill: parent
                     anchors.margins: 12
+                    // Reserve space on the right for Undo/Redo row
+                    anchors.rightMargin: 160
                     spacing: 14
 
                     Text { text: "Brush"; color: uiText; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter }
@@ -137,14 +137,21 @@ Window {
 
                     Rectangle { width: 1; height: 24; color: uiBorder; anchors.verticalCenter: parent.verticalCenter }
 
-                    Button { id: undoBtn; text: "Undo"; enabled: glCanvas.canUndo; onClicked: glCanvas.undoLastStroke() }
-                    Button { id: redoBtn; text: "Redo"; enabled: glCanvas.canRedo; onClicked: glCanvas.redoLastStroke() }
-
-                    Button { id: clearBtn; text: "Clear"; enabled: glCanvas.hasContent; onClicked: glCanvas.clearAllStrokes() }
-
+                    // Removed Undo/Redo here and Clear button; moved Undo/Redo to right side
                     Rectangle { width: 1; height: 24; color: uiBorder; anchors.verticalCenter: parent.verticalCenter }
                     Text { text: "Strokes: " + glCanvas.strokeCount; color: uiSubText; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter }
                     Text { text: "Layers: " + glCanvas.layerCount + " • Active: " + (glCanvas.activeLayerIndex >=0 ? glCanvas.activeLayerIndex+1 : "-"); color: uiSubText; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter }
+                }
+
+                // Top-right Undo/Redo controls
+                Row {
+                    id: undoRedoRow
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    Button { id: undoBtnTop; text: "Undo"; enabled: glCanvas.canUndo; onClicked: glCanvas.undoLastStroke() }
+                    Button { id: redoBtnTop; text: "Redo"; enabled: glCanvas.canRedo; onClicked: glCanvas.redoLastStroke() }
                 }
             }
 
@@ -169,7 +176,47 @@ Window {
                         anchors.fill: parent
                         anchors.margins: 8
                         spacing: 10
+                        // Label at the top for the tools column
                         Text { text: "Tools"; font.bold: true; color: uiText }
+
+                        // Quick-access colored tool swatches (top-to-bottom: Brush, Eraser, Fill)
+                        Column {
+                            spacing: 8
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            Rectangle {
+                                id: swatchBrush
+                                width: 36
+                                height: 36
+                                radius: 6
+                                color: "#e74c3c" // red = Brush
+                                border.color: uiBorder
+                                border.width: 1
+                                MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Brush) }
+                            }
+
+                            Rectangle {
+                                id: swatchEraser
+                                width: 36
+                                height: 36
+                                radius: 6
+                                color: "#3498db" // blue = Eraser
+                                border.color: uiBorder
+                                border.width: 1
+                                MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Eraser) }
+                            }
+
+                            Rectangle {
+                                id: swatchFill
+                                width: 36
+                                height: 36
+                                radius: 6
+                                color: "#f1c40f" // yellow = Fill
+                                border.color: uiBorder
+                                border.width: 1
+                                MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Fill) }
+                            }
+                        }
                         Column {
                             spacing: 8
                             // Brush button
@@ -221,15 +268,19 @@ Window {
                 // Drawing area (center)
                 Rectangle {
                     id: drawingArea
+                    clip: true
+                    z: 10
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     width: Math.min(parent.width - leftToolBar.width - layerSidebar.width - 40, canvasWindow.initialWidth)
                     height: Math.min(parent.height - topMenuBar.height - 40, canvasWindow.initialHeight)
-                    color: uiPanel
+                    // Make the surrounding area gray so the document (paper) stands out as white
+                    color: uiBg
                     border.color: uiBorder
                     border.width: 1
                     Canvas {
                         id: glCanvas
+                        transformOrigin: Item.Center
                         anchors.fill: parent
                         brushColor: "black"
                         brushSize: 5
@@ -258,6 +309,23 @@ Window {
                                 glCanvas.loadBaseImage(canvasWindow.fallbackImageSource)
                             }
                         }
+                    }
+                    // Document background (the white "paper" inside the gray drawing area)
+                    Rectangle {
+                        id: docOverlay
+                        // Compute displayed document size in view coordinates (apply item scale)
+                        property real docW: (glCanvas.documentWidth() > 0 ? glCanvas.documentWidth() * glCanvas.scale : Math.min(parent.width - 40, parent.height - 40))
+                        property real docH: (glCanvas.documentHeight() > 0 ? glCanvas.documentHeight() * glCanvas.scale : Math.min(parent.height - 40, parent.width - 40))
+                        width: docW
+                        height: docH
+                        x: (parent.width - width)/2 + glCanvas.panX * glCanvas.scale
+                        y: (parent.height - height)/2 + glCanvas.panY * glCanvas.scale
+                        color: "white"
+                        border.color: uiBorder
+                        border.width: 2
+                        radius: 2
+                        z: 0 // keep under the actual canvas so canvas drawing appears on top
+                        enabled: false // don't block mouse events to underlying canvas
                     }
                     // Debug Overlay
                     Rectangle {
@@ -289,7 +357,8 @@ Window {
                 // Layer list sidebar (moved to right)
                 Rectangle {
                     id: layerSidebar
-                    width: 180
+                    z: 40
+                    width: 200 // widened for cleaner layout
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     color: uiPanel
@@ -304,58 +373,49 @@ Window {
 
                         Row { id: headerRow; spacing: 6; height: 28; Text { text: "Layers"; font.bold: true; color: uiText } }
 
-                        // Brush / Fill color selection (moved above list for guaranteed visibility)
-                        Rectangle {
-                            id: colorPanel
-                            width: parent.width - 4
-                            height: 140
-                            radius: 4
-                            color: uiPanel
-                            border.color: uiBorder
-                            Column {
-                                anchors.fill: parent
-                                anchors.margins: 6
-                                spacing: 8
-                                Row { spacing: 8
-                                    Text { text: "Brush/Fill Color"; font.pixelSize: 12; color: uiText; font.bold: true }
-                                    Rectangle { width: 32; height: 32; radius: 4; border.color: uiBorder; color: glCanvas.brushColor }
-                                }
-                                Row { spacing: 10
-                                    Text { text:"R:" + Math.round(glCanvas.brushColor.r*255); color: uiText }
-                                    Text { text: "G:" + Math.round(glCanvas.brushColor.g*255); color: uiText }
-                                    Text { text: "B:" + Math.round(glCanvas.brushColor.b*255); color: uiText }
-                                    Text { text: "O:" + Math.round(glCanvas.brushColor.a*100) + "%"; color: uiText }
-                                }
-                                Row { spacing: 8
-                                    Button {
-                                        text: "Pick Color…"
-                                        width: 110
-                                        height: 26
-                                        onClicked: { colorDialog.selectedColor = glCanvas.brushColor; colorDialog.open() }
-                                    }
-                                }
-                            }
-                        }
+                        // (Brush/Fill color moved to bottom-left indicator)
+
+                        // Spacer under header
+                        Item { height: 4; width: 1 }
 
                         ListView {
                             id: layerList
                             model: glCanvas.layers
                             clip: true
                             width: parent.width
-                            height: parent.height - headerRow.height - footerRow.height - colorPanel.height - 16
+                            spacing: 6
+                            // Height: total height minus header & footer & margins
+                            height: parent.height - headerRow.height - footerRow.height - 8 - 8 - 4
+                            ScrollBar.vertical: ScrollBar { }
                             delegate: Rectangle {
                                 id: layerDelegate
-                                height: 30
-                                width: parent.width
-                                color: index === glCanvas.activeLayerIndex ? uiAccent : (mouseArea.hovered ? "#e9e9ea" : "transparent")
+                                height: 36
+                                width: parent.width - 12
+                                anchors.left: parent.left
+                                anchors.leftMargin: 6
+                                anchors.right: parent.right
+                                anchors.rightMargin: 6
+                                color: index === glCanvas.activeLayerIndex ? uiAccent : (mouseArea.containsMouse ? "#f5f5f6" : "#ffffff")
                                 border.color: index === glCanvas.activeLayerIndex ? uiAccentDark : uiBorder
                                 border.width: 1
-                                radius: 3
+                                radius: 4
                                 property bool editing: false
 
                                 Row {
-                                    anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6; spacing: 6
-                                    CheckBox { checked: modelData.visible; onToggled: modelData.visible = checked }
+                                    anchors.fill: parent
+                                    anchors.margins: 6
+                                    spacing: 8
+                                    // Visibility toggle box (keeps checkbox fully inside card)
+                                    Item {
+                                        width: 24; height: 24
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        CheckBox {
+                                            anchors.centerIn: parent
+                                            checked: modelData.visible
+                                            onToggled: modelData.visible = checked
+                                            leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                                        }
+                                    }
                                     Text { visible: !layerDelegate.editing; text: modelData.name; color: index === glCanvas.activeLayerIndex ? "white" : uiText; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter }
                                     TextField {
                                         id: renameEdit
@@ -368,11 +428,17 @@ Window {
                                             layerDelegate.editing = false
                                         }
                                         color: uiText
-                                        background: Rectangle { color: "#ffffff"; border.color: uiBorder; radius: 2 }
+                                        background: Rectangle { color: "#ffffff"; border.color: uiBorder; radius: 3 }
                                     }
                                 }
 
-                                MouseArea { id: mouseArea; anchors.fill: parent; hoverEnabled: true; onClicked: glCanvas.setLayer(index); onDoubleClicked: layerDelegate.editing = true }
+                                MouseArea {
+                                    id: mouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: glCanvas.setLayer(index)
+                                    onDoubleClicked: layerDelegate.editing = true
+                                }
                             }
                         }
 
@@ -385,6 +451,23 @@ Window {
                 }
             }
         }
+    }
+    // Small color indicator placed bottom-left (next to left toolbar)
+    Rectangle {
+        id: bottomLeftColorIndicator
+        width: 40
+        height: 40
+        radius: 6
+        color: glCanvas.brushColor
+        border.color: uiBorder
+        border.width: 1
+        anchors.left: parent.left
+        anchors.leftMargin: 12
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 12
+        z: 70
+
+        MouseArea { anchors.fill: parent; onClicked: { colorDialog.selectedColor = glCanvas.brushColor; colorDialog.open() } }
     }
 
     // Custom color picker popup (replaces ColorDialog to avoid QuickDialogs dependency)
