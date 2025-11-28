@@ -554,8 +554,7 @@ ApplicationWindow {
                     Repeater {
                         model: [
                             {icon: "📄", text: "Custom Document", selected: true},
-                            {icon: "💬", text: "Comic Templates", selected: false},
-                            {icon: "🎨", text: "Design Templates", selected: false},
+                            {icon: "💬", text: "Comic Templates", selected: false}
                         ]
 
                         Button {
@@ -617,15 +616,15 @@ ApplicationWindow {
                                 spacing: 8
 
                                 Repeater {
-                                    model: ["Dimensions", "Content"]
+                                    model: ["Dimensions"]
 
                                     Button {
                                         text: modelData
                                         flat: true
 
                                         background: Rectangle {
-                                            color: index === 0 ? "#4a4a4a" : "transparent"
-                                            border.color: index === 0 ? "#5a5a5a" : "transparent"
+                                            color: "#4a4a4a"
+                                            border.color: "#5a5a5a"
                                             border.width: 1
                                             radius: 4
                                         }
@@ -790,19 +789,45 @@ ApplicationWindow {
                                             to: 99999
                                             value: 4961
                                             editable: true
+                                            implicitHeight: 32
 
                                             background: Rectangle {
                                                 color: "#4a4a4a"
                                                 border.color: "#5a5a5a"
                                                 radius: 3
+                                                implicitHeight: 32
                                             }
 
+                                            // Smaller text inside the box
                                             contentItem: TextInput {
                                                 text: parent.textFromValue(parent.value, parent.locale)
                                                 color: "#cccccc"
+                                                font.pixelSize: 12
                                                 horizontalAlignment: Qt.AlignLeft
                                                 verticalAlignment: Qt.AlignVCenter
                                                 leftPadding: 8
+                                            }
+
+                                            // Compact +/- buttons
+                                            up.indicator: Rectangle {
+                                                width: 28
+                                                height: 32
+                                                x: widthSpinBox.mirrored ? 0 : widthSpinBox.width - width
+                                                y: 0
+                                                color: widthSpinBox.hovered ? "#5a5a5a" : "#4a4a4a"
+                                                border.color: "#6a6a6a"
+                                                radius: 3
+                                                Text { anchors.centerIn: parent; text: "+"; color: "#cccccc"; font.pixelSize: 14 }
+                                            }
+                                            down.indicator: Rectangle {
+            								width: 28
+                                                height: 32
+                                                x: widthSpinBox.mirrored ? widthSpinBox.width - width : 0
+                                                y: 0
+                                                color: widthSpinBox.hovered ? "#5a5a5a" : "#4a4a4a"
+                                                border.color: "#6a6a6a"
+                                                radius: 3
+                                                Text { anchors.centerIn: parent; text: "−"; color: "#cccccc"; font.pixelSize: 14 }
                                             }
 
                                             onValueChanged: {
@@ -848,19 +873,43 @@ ApplicationWindow {
                                             to: 99999
                                             value: 7016
                                             editable: true
+                                            implicitHeight: 32
 
                                             background: Rectangle {
                                                 color: "#4a4a4a"
                                                 border.color: "#5a5a5a"
                                                 radius: 3
+                                                implicitHeight: 32
                                             }
 
                                             contentItem: TextInput {
                                                 text: parent.textFromValue(parent.value, parent.locale)
                                                 color: "#cccccc"
+                                                font.pixelSize: 12
                                                 horizontalAlignment: Qt.AlignLeft
                                                 verticalAlignment: Qt.AlignVCenter
                                                 leftPadding: 8
+                                            }
+
+                                            up.indicator: Rectangle {
+                                                width: 28
+                                                height: 32
+                                                x: heightSpinBox.mirrored ? 0 : heightSpinBox.width - width
+                                                y: 0
+                                                color: heightSpinBox.hovered ? "#5a5a5a" : "#4a4a4a"
+                                                border.color: "#6a6a6a"
+                                                radius: 3
+                                                Text { anchors.centerIn: parent; text: "+"; color: "#cccccc"; font.pixelSize: 14 }
+                                            }
+                                            down.indicator: Rectangle {
+                                                width: 28
+                                                height: 32
+                                                x: heightSpinBox.mirrored ? heightSpinBox.width - width : 0
+                                                y: 0
+                                                color: heightSpinBox.hovered ? "#5a5a5a" : "#4a4a4a"
+                                                border.color: "#6a6a6a"
+                                                radius: 3
+                                                Text { anchors.centerIn: parent; text: "−"; color: "#cccccc"; font.pixelSize: 14 }
                                             }
 
                                             onValueChanged: {
@@ -906,19 +955,43 @@ ApplicationWindow {
                                             to: 9999
                                             value: 600
                                             editable: true
+                                            implicitHeight: 32
 
                                             background: Rectangle {
                                                 color: "#4a4a4a"
                                                 border.color: "#5a5a5a"
                                                 radius: 3
+                                                implicitHeight: 32
                                             }
 
                                             contentItem: TextInput {
                                                 text: parent.textFromValue(parent.value, parent.locale)
                                                 color: "#cccccc"
+                                                font.pixelSize: 12
                                                 horizontalAlignment: Qt.AlignLeft
                                                 verticalAlignment: Qt.AlignVCenter
                                                 leftPadding: 8
+                                            }
+
+                                            up.indicator: Rectangle {
+                                                width: 28
+                                                height: 32
+                                                x: resolutionSpinBox.mirrored ? 0 : resolutionSpinBox.width - width
+                                                y: 0
+                                                color: resolutionSpinBox.hovered ? "#5a5a5a" : "#4a4a4a"
+                                                border.color: "#6a6a6a"
+                                                radius: 3
+                                                Text { anchors.centerIn: parent; text: "+"; color: "#cccccc"; font.pixelSize: 14 }
+                                            }
+                                            down.indicator: Rectangle {
+                                                width: 28
+                                                height: 32
+                                                x: resolutionSpinBox.mirrored ? resolutionSpinBox.width - width : 0
+                                                y: 0
+                                                color: resolutionSpinBox.hovered ? "#5a5a5a" : "#4a4a4a"
+                                                border.color: "#6a6a6a"
+                                                radius: 3
+                                                Text { anchors.centerIn: parent; text: "−"; color: "#cccccc"; font.pixelSize: 14 }
                                             }
 
                                             onValueChanged: {
@@ -945,209 +1018,10 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    // Save Image Size
-                                    RowLayout {
-                                        Layout.fillWidth: true
-
-                                        Text {
-                                            text: "Save Image Size as:"
-                                            color: "#aaaaaa"
-                                            font.pixelSize: 12
-                                        }
-
-                                        TextField {
-                                            Layout.fillWidth: true
-                                            placeholderText: ""
-
-                                            background: Rectangle {
-                                                color: "#4a4a4a"
-                                                border.color: "#5a5a5a"
-                                                radius: 3
-                                            }
-
-                                            color: "#cccccc"
-                                        }
-
-                                        Button {
-                                            text: "Save"
-
-                                            background: Rectangle {
-                                                color: parent.hovered ? "#5a5a5a" : "#4a4a4a"
-                                                border.color: "#6a6a6a"
-                                                radius: 3
-                                            }
-
-                                            contentItem: Text {
-                                                text: parent.text
-                                                color: "#cccccc"
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-                                        }
-                                    }
+                                    // Save Image Size section removed as requested
                                 }
                             }
-
-                            // Color Section
-                            GroupBox {
-                                Layout.fillWidth: true
-
-                                background: Rectangle {
-                                    color: "#2b2b2b"
-                                    border.color: "#1a1a1a"
-                                    radius: 4
-                                }
-
-                                label: Text {
-                                    text: "Color"
-                                    color: "#cccccc"
-                                    font.pixelSize: 13
-                                    padding: 4
-                                }
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: 12
-
-                                    // Model
-                                    RowLayout {
-                                        Layout.fillWidth: true
-
-                                        Text {
-                                            text: "Model:"
-                                            color: "#aaaaaa"
-                                            font.pixelSize: 12
-                                            Layout.preferredWidth: 80
-                                        }
-
-                                        ComboBox {
-                                            Layout.fillWidth: true
-                                            model: ["RGB/Alpha", "CMYK", "Grayscale"]
-
-                                            background: Rectangle {
-                                                color: "#4a4a4a"
-                                                border.color: "#5a5a5a"
-                                                radius: 3
-                                            }
-
-                                            contentItem: Text {
-                                                text: parent.displayText
-                                                color: "#cccccc"
-                                                verticalAlignment: Text.AlignVCenter
-                                                leftPadding: 8
-                                            }
-                                        }
-                                    }
-
-                                    // Depth
-                                    RowLayout {
-                                        Layout.fillWidth: true
-
-                                        Text {
-                                            text: "Depth:"
-                                            color: "#aaaaaa"
-                                            font.pixelSize: 12
-                                            Layout.preferredWidth: 80
-                                        }
-
-                                        ComboBox {
-                                            Layout.fillWidth: true
-                                            model: ["8-bit integer/channel", "16-bit integer/channel", "32-bit float/channel"]
-
-                                            background: Rectangle {
-                                                color: "#4a4a4a"
-                                                border.color: "#5a5a5a"
-                                                radius: 3
-                                            }
-
-                                            contentItem: Text {
-                                                text: parent.displayText
-                                                color: "#cccccc"
-                                                verticalAlignment: Text.AlignVCenter
-                                                leftPadding: 8
-                                            }
-                                        }
-                                    }
-
-                                    // Profile
-                                    RowLayout {
-                                        Layout.fillWidth: true
-
-                                        Text {
-                                            text: "Profile:"
-                                            color: "#aaaaaa"
-                                            font.pixelSize: 12
-                                            Layout.preferredWidth: 80
-                                        }
-
-                                        ComboBox {
-                                            Layout.fillWidth: true
-                                            model: ["sRGB-elle-V2-srgbtrc.icc (Default)"]
-
-                                            background: Rectangle {
-                                                color: "#4a4a4a"
-                                                border.color: "#5a5a5a"
-                                                radius: 3
-                                            }
-
-                                            contentItem: Text {
-                                                text: parent.displayText
-                                                color: "#cccccc"
-                                                verticalAlignment: Text.AlignVCenter
-                                                leftPadding: 8
-                                            }
-                                        }
-
-                                        Button {
-                                            text: "🔄"
-                                            Layout.preferredWidth: 30
-                                            Layout.preferredHeight: 30
-
-                                            background: Rectangle {
-                                                color: parent.hovered ? "#5a5a5a" : "#4a4a4a"
-                                                border.color: "#6a6a6a"
-                                                radius: 3
-                                            }
-
-                                            contentItem: Text {
-                                                text: parent.text
-                                                color: "#cccccc"
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-                                        }
-                                    }
-
-                                    // Color Space Browser Button
-                                    Button {
-                                        Layout.fillWidth: true
-                                        text: "Color Space Browser"
-
-                                        background: Rectangle {
-                                            color: parent.hovered ? "#5a5a5a" : "#4a4a4a"
-                                            border.color: "#6a6a6a"
-                                            radius: 3
-                                        }
-
-                                        contentItem: Text {
-                                            text: parent.text
-                                            color: "#cccccc"
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Info Text
-                            Text {
-                                Layout.fillWidth: true
-                                text: "This document will be " + widthSpinBox.value + " pixels by " + heightSpinBox.value + " pixels in RGB/Alpha (8-bit integer/channel). The pixel size is 32 bit. A single paint layer will use " +
-                                      ((widthSpinBox.value * heightSpinBox.value * 4) / (1024 * 1024)).toFixed(1) + " MiB of RAM."
-                                color: "#aaaaaa"
-                                font.pixelSize: 11
-                                wrapMode: Text.WordWrap
-                            }
+                            // Color section removed as requested
 
                             Item { Layout.preferredHeight: 16 }
                         }
