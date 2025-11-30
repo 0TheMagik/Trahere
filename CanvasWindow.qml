@@ -60,10 +60,7 @@ Window {
                             console.log(ok ? "Saved ALL layers ORA:" : "Failed multi-layer save", lastOraPath)
                         }
                     }
-                    MenuItem { text: "Save As"; 
-                        onTriggered: { savePopup.openMode = "all"; savePopup.open() } 
-                        
-                        }
+                    MenuItem { text: "Save As"; onTriggered: { savePopup.open(); } }
                     MenuSeparator {}
                     MenuItem { text: "Export PNG..."; onTriggered: pngExportDialog.open() }
                     MenuItem { text: "Close" }
@@ -171,8 +168,8 @@ Window {
                 }
             }
 
-            // Central area with left tool bar, canvas, right layer sidebar
-            Row {
+            // Central area with left tool bar, canvas, right layer sidebar (responsive)
+            RowLayout {
                 id: centralRow
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -181,9 +178,10 @@ Window {
                 // Left tools toolbar
                 Rectangle {
                     id: leftToolBar
-                    width: 70
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
+                    Layout.preferredWidth: 70
+                    Layout.minimumWidth: 70
+                    Layout.maximumWidth: 90
+                    Layout.fillHeight: true
                     color: uiPanel
                     border.color: uiBorder
                     radius: 4
@@ -304,10 +302,8 @@ Window {
                     id: drawingArea
                     clip: true
                     z: 10
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: Math.min(parent.width - leftToolBar.width - layerSidebar.width - 40, canvasWindow.initialWidth)
-                    height: Math.min(parent.height - topMenuBar.height - 40, canvasWindow.initialHeight)
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                     // Make the surrounding area gray so the document (paper) stands out as white
                     color: uiBg
                     border.color: uiBorder
@@ -392,9 +388,10 @@ Window {
                 Rectangle {
                     id: layerSidebar
                     z: 40
-                    width: 200 // widened for cleaner layout
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
+                    Layout.preferredWidth: 220
+                    Layout.minimumWidth: 180
+                    Layout.maximumWidth: 280
+                    Layout.fillHeight: true
                     color: uiPanel
                     border.color: uiBorder
                     radius: 4
@@ -563,11 +560,11 @@ Window {
         width: 360
         height: 170
         padding: 12
-        property string openMode: "all" // "all" or "strokes"
+        // Unified save: always save all layers to .ora
         background: Rectangle { color: uiPanel; border.color: uiBorder; radius: 6 }
         contentItem: Column {
             spacing: 8
-            Text { text: savePopup.openMode === "all" ? "Save All Layers (.ora)" : "Save Strokes Only (.ora)"; font.pixelSize: 14; font.bold: true; color: uiText }
+            Text { text: "Save All Layers (.ora)"; font.pixelSize: 14; font.bold: true; color: uiText }
             TextField {
                 id: savePathField
                 placeholderText: "Enter output path (e.g. C:/path/file.ora)"
@@ -584,8 +581,8 @@ Window {
                         if (!localPath.toLowerCase().endsWith(".ora")) localPath += ".ora"
                         lastOraPath = localPath
                         var urlStr = "file:///" + localPath.replace(/\\/g,"/")
-                        var ok = (savePopup.openMode === "all") ? glCanvas.saveOraAllLayers(urlStr) : glCanvas.saveOraStrokesOnly(urlStr)
-                        console.log(ok ? (openMode === "all" ? "Saved ALL layers ORA:" : "Saved strokes-only ORA:") : "Failed save", localPath)
+                        var ok = glCanvas.saveOraAllLayers(urlStr)
+                        console.log(ok ? "Saved ALL layers ORA:" : "Failed save", localPath)
                         savePopup.close()
                     }
                 }
