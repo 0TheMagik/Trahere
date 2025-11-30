@@ -4,7 +4,7 @@ project(Trahere VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Concurrent QuickDialogs2)
+find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Concurrent QuickDialogs2 Svg)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -41,6 +41,9 @@ qt_add_qml_module(appTrahere
         Images/open_logo.png
         Images/setting_logo.png
         Images/draw_logo.png
+        Images/brush-svgrepo-com.svg
+        Images/eraser-svgrepo-com.svg
+        Images/fill-solid-svgrepo-com.svg
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
@@ -59,6 +62,7 @@ target_link_libraries(appTrahere
         Qt6::Quick
         Qt6::QuickControls2
         Qt6::QuickDialogs2
+        Qt6::Svg
     Qt6::Concurrent
 )
 

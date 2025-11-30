@@ -122,7 +122,23 @@ Window {
                     anchors.rightMargin: 160
                     spacing: 14
 
-                    Text { text: "Brush"; color: uiText; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter }
+                    // Active tool display with icon
+                    Row {
+                        spacing: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        Image {
+                            width: 20; height: 20; fillMode: Image.PreserveAspectFit
+                            source: glCanvas.activeTool === Canvas.Brush ? "Images/brush-svgrepo-com.svg"
+                                   : glCanvas.activeTool === Canvas.Eraser ? "Images/eraser-svgrepo-com.svg"
+                                   : glCanvas.activeTool === Canvas.Fill ? "Images/fill-solid-svgrepo-com.svg" : ""
+                        }
+                        Text {
+                            text: glCanvas.activeTool === Canvas.Brush ? "Brush" : (glCanvas.activeTool === Canvas.Eraser ? "Eraser" : (glCanvas.activeTool === Canvas.Fill ? "Fill" : "Tool"))
+                            color: uiText
+                            font.pixelSize: 12
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
 
                     Slider {
                         id: brushSizeSlider
@@ -189,9 +205,10 @@ Window {
                                 width: 36
                                 height: 36
                                 radius: 6
-                                color: "#e74c3c" // red = Brush
+                                color: "transparent"
                                 border.color: uiBorder
                                 border.width: 1
+                                Image { anchors.centerIn: parent; source: "Images/brush-svgrepo-com.svg"; width: 24; height: 24; fillMode: Image.PreserveAspectFit }
                                 MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Brush) }
                             }
 
@@ -200,9 +217,10 @@ Window {
                                 width: 36
                                 height: 36
                                 radius: 6
-                                color: "#3498db" // blue = Eraser
+                                color: "transparent"
                                 border.color: uiBorder
                                 border.width: 1
+                                Image { anchors.centerIn: parent; source: "Images/eraser-svgrepo-com.svg"; width: 24; height: 24; fillMode: Image.PreserveAspectFit }
                                 MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Eraser) }
                             }
 
@@ -211,9 +229,10 @@ Window {
                                 width: 36
                                 height: 36
                                 radius: 6
-                                color: "#f1c40f" // yellow = Fill
+                                color: "transparent"
                                 border.color: uiBorder
                                 border.width: 1
+                                Image { anchors.centerIn: parent; source: "Images/fill-solid-svgrepo-com.svg"; width: 24; height: 24; fillMode: Image.PreserveAspectFit }
                                 MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Fill) }
                             }
                         }
@@ -228,7 +247,12 @@ Window {
                                 color: glCanvas.activeTool === Canvas.Brush ? uiAccent : "transparent"
                                 border.color: glCanvas.activeTool === Canvas.Brush ? uiAccentDark : uiBorder
                                 border.width: 1
-                                Text { text: "Brush"; anchors.centerIn: parent; color: glCanvas.activeTool === Canvas.Brush ? "white" : uiText; font.pixelSize: 12 }
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Image { source: "Images/brush-svgrepo-com.svg"; width: 18; height: 18; fillMode: Image.PreserveAspectFit }
+                                    Text { text: "Brush"; color: glCanvas.activeTool === Canvas.Brush ? "white" : uiText; font.pixelSize: 12 }
+                                }
                                 MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Brush) }
                             }
                             // Eraser button
@@ -240,7 +264,12 @@ Window {
                                 color: glCanvas.activeTool === Canvas.Eraser ? uiAccent : "transparent"
                                 border.color: glCanvas.activeTool === Canvas.Eraser ? uiAccentDark : uiBorder
                                 border.width: 1
-                                Text { text: "Eraser"; anchors.centerIn: parent; color: glCanvas.activeTool === Canvas.Eraser ? "white" : uiText; font.pixelSize: 12 }
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Image { source: "Images/eraser-svgrepo-com.svg"; width: 18; height: 18; fillMode: Image.PreserveAspectFit }
+                                    Text { text: "Eraser"; color: glCanvas.activeTool === Canvas.Eraser ? "white" : uiText; font.pixelSize: 12 }
+                                }
                                 MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Eraser) }
                             }
                             // Future tool placeholders (disabled)
@@ -253,7 +282,12 @@ Window {
                                 color: glCanvas.activeTool === Canvas.Fill ? uiAccent : "transparent"
                                 border.color: glCanvas.activeTool === Canvas.Fill ? uiAccentDark : uiBorder
                                 border.width: 1
-                                Text { text: "Fill"; anchors.centerIn: parent; color: glCanvas.activeTool === Canvas.Fill ? "white" : uiText; font.pixelSize: 12 }
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Image { source: "Images/fill-solid-svgrepo-com.svg"; width: 18; height: 18; fillMode: Image.PreserveAspectFit }
+                                    Text { text: "Fill"; color: glCanvas.activeTool === Canvas.Fill ? "white" : uiText; font.pixelSize: 12 }
+                                }
                                 MouseArea { anchors.fill: parent; onClicked: glCanvas.setActiveTool(Canvas.Fill) }
                             }
                             Rectangle {
