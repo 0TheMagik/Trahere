@@ -79,6 +79,22 @@ Canvas::Canvas(QQuickItem *parent)
     });
 }
 
+int Canvas::docOffsetX() const {
+    int w = m_documentSize.width();
+    if (w <= 0) return 0;
+    int vw = int(width());
+    if (w < vw) return (vw - w) / 2; // center when document smaller
+    return 0; // no offset if document >= view
+}
+
+int Canvas::docOffsetY() const {
+    int h = m_documentSize.height();
+    if (h <= 0) return 0;
+    int vh = int(height());
+    if (h < vh) return (vh - h) / 2;
+    return 0;
+}
+
 // Zoom helpers
 void Canvas::setZoom(float z) {
     float clamped = std::clamp(z, 0.1f, 10.0f); // reasonable bounds
@@ -259,8 +275,10 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
     updateDebug(QStringLiteral("MousePress"), 1.0f, m_brushSize);
-    if (m_toolMgr)
-        m_toolMgr->onPress(QVector2D(event->position()) - QVector2D(m_panX, m_panY), m_brushColor, m_brushSize);
+    if (m_toolMgr) {
+        QVector2D local = QVector2D(event->position()) - QVector2D(m_panX, m_panY) - QVector2D(docOffsetX(), docOffsetY());
+        m_toolMgr->onPress(local, m_brushColor, m_brushSize);
+    }
     update();
 }
 
@@ -280,8 +298,10 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
     updateDebug(QStringLiteral("MouseMove"), 1.0f, m_brushSize);
-    if (m_toolMgr)
-        m_toolMgr->onMove(QVector2D(event->position()) - QVector2D(m_panX, m_panY));
+    if (m_toolMgr) {
+        QVector2D local = QVector2D(event->position()) - QVector2D(m_panX, m_panY) - QVector2D(docOffsetX(), docOffsetY());
+        m_toolMgr->onMove(local);
+    }
     update();
 }
 
@@ -295,8 +315,7 @@ void Canvas::mouseReleaseEvent(QMouseEvent *event) {
     m_cursorPos = QVector2D(event->position());
     emit cursorPosChanged();
     updateDebug(QStringLiteral("MouseRelease"), 1.0f, m_brushSize);
-    if (m_toolMgr)
-        m_toolMgr->onRelease();
+    if (m_toolMgr) m_toolMgr->onRelease();
     finalizePointerRelease();
     update();
 }
@@ -431,12 +450,19 @@ void Canvas::handleTablet(QEvent::Type type, const QVector2D &pos, float pressur
         m_inTabletStroke = true;
         qInfo() << "TabletPress" << "pressure=" << pressure << "pos=" << pos;
         updateDebug(QStringLiteral("TabletPress"), pressure, size);
-        if (m_toolMgr) m_toolMgr->onPress(pos - QVector2D(m_panX, m_panY), m_brushColor, size);
+        if (m_toolMgr) {
+            QVector2D local = pos - QVector2D(m_panX, m_panY) - QVector2D(docOffsetX(), docOffsetY());
+            m_toolMgr->onPress(local, m_brushColor, size);
+        }
         break;
     case QEvent::TabletMove:
         qInfo() << "TabletMove" << "pressure=" << pressure << "pos=" << pos;
         updateDebug(QStringLiteral("TabletMove"), pressure, size);
-        if (m_toolMgr) { m_toolMgr->setDynamicSize(size); m_toolMgr->onMove(pos - QVector2D(m_panX, m_panY)); }
+        if (m_toolMgr) {
+            QVector2D local = pos - QVector2D(m_panX, m_panY) - QVector2D(docOffsetX(), docOffsetY());
+            m_toolMgr->setDynamicSize(size);
+            m_toolMgr->onMove(local);
+        }
         break;
     case QEvent::TabletRelease:
         m_inTabletStroke = false;
@@ -522,6 +548,8 @@ QImage Canvas::compositedImage() const {
     }
     // Composite all layers bottom -> top including each layer's raster and strokes
     QPainter compPainter(&buffer); compPainter.setRenderHint(QPainter::Antialiasing, true);
+    int offX = const_cast<Canvas*>(this)->docOffsetX();
+    int offY = const_cast<Canvas*>(this)->docOffsetY();
     for (int li = 0; li < m_layers.size(); ++li) {
         Layer* layer = m_layers.at(li);
         if (!layer || !layer->isVisible()) continue;
@@ -540,8 +568,8 @@ QImage Canvas::compositedImage() const {
         const auto &strokes = layer->engine().strokes();
         for (const auto &stroke : strokes) {
             if (stroke.points.isEmpty()) continue;
-            QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
-            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            QPainterPath path(QPointF(stroke.points.first().x() + offX, stroke.points.first().y() + offY));
+            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x() + offX, stroke.points[i].y() + offY);
             if (stroke.mode == BrushStroke::Erase) {
                 lp.setCompositionMode(QPainter::CompositionMode_Clear);
                 QPen pen(Qt::transparent, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
@@ -584,6 +612,8 @@ bool Canvas::saveOraStrokesOnly(const QUrl &destinationUrl) {
     buffer.fill(Qt::transparent);
     QPainter painter(&buffer); painter.setRenderHint(QPainter::Antialiasing, true);
     // Include raster content from all visible layers (since fills produce raster) then strokes
+    int offX = docOffsetX();
+    int offY = docOffsetY();
     for (int li=0; li<m_layers.size(); ++li) {
         Layer* layer = m_layers.at(li);
         if (!layer || !layer->isVisible()) continue;
@@ -597,8 +627,8 @@ bool Canvas::saveOraStrokesOnly(const QUrl &destinationUrl) {
         }
         for (const auto &stroke : layer->engine().strokes()) {
             if (stroke.points.isEmpty()) continue;
-            QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
-            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            QPainterPath path(QPointF(stroke.points.first().x() + offX, stroke.points.first().y() + offY));
+            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x() + offX, stroke.points[i].y() + offY);
             if (stroke.mode == BrushStroke::Erase) {
                 painter.setCompositionMode(QPainter::CompositionMode_Clear);
                 QPen pen(Qt::transparent, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
@@ -637,6 +667,8 @@ bool Canvas::saveOraAllLayers(const QUrl &destinationUrl) {
 
     // Build per-layer images. Internal m_layers is assumed bottom->top (new appended layers over earlier ones)
     // For ORA we need top-most first, so iterate reversed.
+    int offX = docOffsetX();
+    int offY = docOffsetY();
     for (int li = m_layers.size() - 1; li >= 0; --li) { // top-first for ORA
         Layer* layer = m_layers.at(li);
         if (!layer) continue;
@@ -656,8 +688,8 @@ bool Canvas::saveOraAllLayers(const QUrl &destinationUrl) {
         const auto &strokes = layer->engine().strokes();
         for (const auto &stroke : strokes) {
             if (stroke.points.isEmpty()) continue;
-            QPainterPath path(QPointF(stroke.points.first().x(), stroke.points.first().y()));
-            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x(), stroke.points[i].y());
+            QPainterPath path(QPointF(stroke.points.first().x() + offX, stroke.points.first().y() + offY));
+            for (int i=1;i<stroke.points.size();++i) path.lineTo(stroke.points[i].x() + offX, stroke.points[i].y() + offY);
             if (stroke.mode == BrushStroke::Erase) {
                 painter.setCompositionMode(QPainter::CompositionMode_Clear);
                 QPen pen(Qt::transparent, stroke.size, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);

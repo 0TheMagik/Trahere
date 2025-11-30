@@ -109,13 +109,15 @@ void GLRenderer::render() {
     }
 
     glViewport(0, 0, m_viewportSize.width(), m_viewportSize.height());
-    glClearColor(1.f, 1.f, 1.f, 1.f);
+    // Clear to transparent so underlying QML (gray area) shows through outside document bounds
+    glClearColor(0.f, 0.f, 0.f, 0.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Prepare CPU buffer if needed (pixel size)
     if (m_buffer.size() != m_viewportSize) {
         m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
-        m_buffer.fill(Qt::white);
+        // DEBUG: fill buffer with a bright color to verify renderer output (replace with uiBg after testing)
+        m_buffer.fill(QColor(0xFF,0x00,0xFF));
         m_rebuildVersion = -1; // force rebuild
         m_bufferDirty = true;
     }
@@ -425,16 +427,33 @@ void GLRenderer::render() {
 
     if (layersChanged) {
         // Rebuild base composite excluding active layer
+        // Build a transparent base composite, draw a white "paper" rectangle at document size centered in view,
+        // then composite cached layers on top of it. This allows QML background to show around the paper.
+        m_baseCompositeExcludingActive = QImage(m_viewportSize, QImage::Format_ARGB32);
+        // DEBUG: fill base composite with bright cyan to verify renderer output (replace with uiBg after testing)
+        m_baseCompositeExcludingActive.fill(QColor(0x00,0xFF,0xFF));
+        QPainter basep(&m_baseCompositeExcludingActive);
+        // Compute document rectangle in pixel coordinates (logical document size * dpr)
+        int docW = m_canvas->documentWidth();
+        int docH = m_canvas->documentHeight();
+        if (docW <= 0 || docH <= 0) {
+            // fallback: use a large centered square if document size is not set
+            docW = std::min(m_viewportSize.width() - 40, m_viewportSize.height() - 40);
+            docH = docW;
+        }
+        const int docPixW = static_cast<int>(std::round(docW * m_dpr));
+        const int docPixH = static_cast<int>(std::round(docH * m_dpr));
+        const int docX = (m_viewportSize.width() - docPixW) / 2;
+        const int docY = (m_viewportSize.height() - docPixH) / 2;
+        // White paper background
+        basep.fillRect(docX, docY, docPixW, docPixH, Qt::white);
+        // If there's a base image, draw it scaled into the paper rect
         if (m_canvas && m_canvas->hasBaseImage()) {
             QImage base = m_canvas->baseImage();
-            if (base.size() != m_viewportSize) base = base.scaled(m_viewportSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-            if (base.format() != QImage::Format_ARGB32) base = base.convertToFormat(QImage::Format_ARGB32);
-            m_baseCompositeExcludingActive = base;
-        } else {
-            m_baseCompositeExcludingActive = QImage(m_viewportSize, QImage::Format_ARGB32);
-            m_baseCompositeExcludingActive.fill(Qt::white);
+            if (base.size() != QSize(docPixW, docPixH)) base = base.scaled(docPixW, docPixH, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            if (!base.isNull()) basep.drawImage(docX, docY, base);
         }
-        QPainter basep(&m_baseCompositeExcludingActive);
+        // Composite all cached layers (these images already are viewport-sized and positioned)
         for (int li=0; li<m_cachedLayerImages.size(); ++li) {
             if (li == m_activeLayerIndexSnap) continue; // exclude active layer content
             const QImage &img = m_cachedLayerImages[li];
