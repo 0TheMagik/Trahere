@@ -343,8 +343,15 @@ ApplicationWindow {
 
                             var comp = Qt.createComponent("CanvasWindow.qml")
                             if (comp.status === Component.Ready) {
-                                // Pass lastOraPath so the CanvasWindow enables plain 'Save' action.
-                                var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, layerPaths: paths, lastOraPath: model.filePath })
+                                // Use ORA's image size when opening, avoid hardcoded 1200x800
+                                var ow = oraLoader.imageWidth()
+                                var oh = oraLoader.imageHeight()
+                                var props = { imageSource: merged, fallbackImageSource: layer0, layerPaths: paths, lastOraPath: model.filePath }
+                                if (ow > 0 && oh > 0) {
+                                    props.initialWidth = ow
+                                    props.initialHeight = oh
+                                }
+                                var win = comp.createObject(window, props)
                             } else {
                                 console.log("Canvas component not ready:", comp.status, comp.errorString())
                             }
@@ -443,7 +450,15 @@ ApplicationWindow {
                 // Create a preview window using CanvasWindow
                 var comp = Qt.createComponent("CanvasWindow.qml")
                 if (comp.status === Component.Ready) {
-                    var win = comp.createObject(window, { initialWidth: 1200, initialHeight: 800, imageSource: merged, fallbackImageSource: layer0, lastOraPath: localOpenedPath, layerPaths: paths })
+                    // Use ORA's image size when opening, avoid hardcoded 1200x800
+                    var ow = oraLoader.imageWidth()
+                    var oh = oraLoader.imageHeight()
+                    var props = { imageSource: merged, fallbackImageSource: layer0, lastOraPath: localOpenedPath, layerPaths: paths }
+                    if (ow > 0 && oh > 0) {
+                        props.initialWidth = ow
+                        props.initialHeight = oh
+                    }
+                    var win = comp.createObject(window, props)
                 } else {
                     console.log("Canvas component not ready:", comp.status, comp.errorString())
                 }

@@ -13,11 +13,30 @@ GLRenderer::GLRenderer(Canvas *canvas)
 }
 
 QOpenGLFramebufferObject *GLRenderer::createFramebufferObject(const QSize &size) {
+    // Keep the viewport (item) size for screen-space mapping
     m_viewportSize = size;
+
+    // Create FBO sized to the logical document, not the viewport
+    int docW = m_canvas ? m_canvas->documentWidth() : 0;
+    int docH = m_canvas ? m_canvas->documentHeight() : 0;
+    // Fallback to explicit user-targeted size when not set
+    const int kDefaultDocW = 4961;
+    const int kDefaultDocH = 7016;
+    qreal dpr = (m_canvas && m_canvas->window()) ? m_canvas->window()->effectiveDevicePixelRatio() : 1.0;
+    if (docW <= 0 || docH <= 0) {
+        // Use explicit default document size (user requested 4961x7016)
+        docW = kDefaultDocW;
+        docH = kDefaultDocH;
+        // Keep device pixel ratio to honor high-DPI without distorting logical size
+        dpr = (m_canvas && m_canvas->window()) ? m_canvas->window()->effectiveDevicePixelRatio() : 1.0;
+    }
+    const QSize fboSize(static_cast<int>(std::round(docW * dpr)),
+                        static_cast<int>(std::round(docH * dpr)));
+
     QOpenGLFramebufferObjectFormat format;
     format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
     format.setSamples(4);
-    return new QOpenGLFramebufferObject(size, format);
+    return new QOpenGLFramebufferObject(fboSize, format);
 }
 
 void GLRenderer::synchronize(QQuickFramebufferObject *item) {
@@ -113,133 +132,30 @@ void GLRenderer::render() {
     glClearColor(0.f, 0.f, 0.f, 0.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Prepare CPU buffer if needed (pixel size)
-    if (m_buffer.size() != m_viewportSize) {
-        m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
-        // DEBUG: fill buffer with a bright color to verify renderer output (replace with uiBg after testing)
-        m_buffer.fill(QColor(0xFF,0x00,0xFF));
+    // Prepare CPU buffer sized to document pixels (not viewport)
+    int docW = m_canvas->documentWidth();
+    int docH = m_canvas->documentHeight();
+    const int kDefaultDocW = 4961;
+    const int kDefaultDocH = 7016;
+    if (docW <= 0 || docH <= 0) {
+        // Use explicit default document size (user requested 4961x7016)
+        docW = kDefaultDocW;
+        docH = kDefaultDocH;
+    }
+    const QSize contentSize(static_cast<int>(std::round(docW * m_dpr)),
+                            static_cast<int>(std::round(docH * m_dpr)));
+    if (m_buffer.size() != contentSize) {
+        m_buffer = QImage(contentSize, QImage::Format_ARGB32);
+        m_buffer.fill(Qt::transparent);
         m_rebuildVersion = -1; // force rebuild
         m_bufferDirty = true;
     }
 
     const qreal dpr = m_dpr;
 
-    // Paint a filled circle into the CPU buffer at pixel coordinates, skipping pixels already equal to color
-    auto paintCirclePix = [&](float cxPix, float cyPix, const QColor &color, float radiusPix){
-        // Antialiased stamp: per-pixel coverage with fast accept/reject, supersample on edges.
-        const float r = std::max(0.5f, radiusPix);
-        const int rPix = static_cast<int>(std::ceil(r));
-        const int w = m_buffer.width();
-        const int h = m_buffer.height();
-        const int x0 = std::max(0, static_cast<int>(std::floor(cxPix - rPix)));
-        const int x1 = std::min(w - 1, static_cast<int>(std::ceil(cxPix + rPix)));
-        const int y0 = std::max(0, static_cast<int>(std::floor(cyPix - rPix)));
-        const int y1 = std::min(h - 1, static_cast<int>(std::ceil(cyPix + rPix)));
+    // Removed unused local brush stamping helper to silence analyzer warning.
 
-        const float rSq = r * r;
-        constexpr float root2over2 = 0.70710678f;
-        const float inner = std::max(0.0f, r - root2over2);
-        const float innerSq = inner * inner;
-        const float outer = r + root2over2;
-        const float outerSq = outer * outer;
-
-        // Brush color as floats
-        const float sr = color.redF();
-        const float sg = color.greenF();
-        const float sb = color.blueF();
-        const float saBrush = color.alphaF();
-
-        // Supersample grid (4x4) offsets relative to pixel center
-        static const float offs[4] = { -0.375f, -0.125f, 0.125f, 0.375f };
-
-        for (int y = y0; y <= y1; ++y) {
-            QRgb *scan = reinterpret_cast<QRgb*>(m_buffer.scanLine(y));
-            const float pyCenter = (float)y + 0.5f;
-            const float dyc = pyCenter - cyPix;
-            const float dycSq = dyc * dyc;
-            for (int x = x0; x <= x1; ++x) {
-                const float pxCenter = (float)x + 0.5f;
-                const float dxc = pxCenter - cxPix;
-                const float centerDistSq = dxc * dxc + dycSq;
-
-                float coverage = 0.0f;
-                if (centerDistSq <= innerSq) {
-                    coverage = 1.0f; // fully inside
-                } else if (centerDistSq >= outerSq) {
-                    continue; // fully outside
-                } else {
-                    // Edge pixel: 4x4 supersampling
-                    int inside = 0;
-                    for (int jy = 0; jy < 4; ++jy) {
-                        const float oy = offs[jy];
-                        const float sy = pyCenter + oy;
-                        const float dy = sy - cyPix;
-                        for (int ix = 0; ix < 4; ++ix) {
-                            const float ox = offs[ix];
-                            const float sx = pxCenter + ox;
-                            const float dx = sx - cxPix;
-                            const float dsq = dx * dx + dy * dy;
-                            if (dsq <= rSq) ++inside;
-                        }
-                    }
-                    coverage = inside / 16.0f;
-                    if (coverage <= 0.0f) continue;
-                }
-
-                // Blend new color over existing pixel using straight alpha compositing.
-                const float srcA = std::clamp(coverage * saBrush, 0.0f, 1.0f);
-                if (srcA <= 0.0f) continue;
-
-                const QRgb dst = scan[x];
-                const float dr = qRed(dst) / 255.0f;
-                const float dg = qGreen(dst) / 255.0f;
-                const float db = qBlue(dst) / 255.0f;
-                // Destination is opaque (background is opaque white), keep alpha at 1.0
-                const float outR = sr * srcA + dr * (1.0f - srcA);
-                const float outG = sg * srcA + dg * (1.0f - srcA);
-                const float outB = sb * srcA + db * (1.0f - srcA);
-
-                const int ir = (int)std::lround(std::clamp(outR * 255.0f, 0.0f, 255.0f));
-                const int ig = (int)std::lround(std::clamp(outG * 255.0f, 0.0f, 255.0f));
-                const int ib = (int)std::lround(std::clamp(outB * 255.0f, 0.0f, 255.0f));
-                const QRgb out = qRgba(ir, ig, ib, 255);
-                if (out != dst) scan[x] = out;
-            }
-        }
-        m_bufferDirty = true;
-    };
-
-    // Helper to draw a stroke by interpolating between points in pixel space
-    auto drawStrokeInterpolated = [&](const QList<QVector2D>& ptsLogical, const QColor& col, float sizeLogical){
-        const int n = ptsLogical.size();
-        if (n == 0) return;
-        float radiusPix = std::max(0.5f, sizeLogical * 0.5f * (float)dpr);
-        // Always stamp first point
-        {
-            QVector2D p0 = ptsLogical.first() * (float)dpr;
-            paintCirclePix(p0.x(), p0.y(), col, radiusPix);
-        }
-        for (int i = 1; i < n; ++i) {
-            QVector2D a = ptsLogical[i-1] * (float)dpr;
-            QVector2D b = ptsLogical[i] * (float)dpr;
-            QVector2D d = b - a;
-            float len = std::sqrt(d.lengthSquared());
-            if (len < 1e-3f) {
-                paintCirclePix(b.x(), b.y(), col, radiusPix);
-                continue;
-            }
-            QVector2D dir = d / len;
-            float step = std::max(1.0f, radiusPix * 0.5f); // dense enough to avoid gaps
-            float t = 0.0f;
-            while (t <= len) {
-                QVector2D p = a + dir * t;
-                paintCirclePix(p.x(), p.y(), col, radiusPix);
-                t += step;
-            }
-            // Ensure we hit the exact end point
-            paintCirclePix(b.x(), b.y(), col, radiusPix);
-        }
-    };
+    // Note: previously had an unused helper lambda drawStrokeInterpolated; removed to fix analyzer warning.
 
     // --- Layer versioning & caching ---
     // Compute version signatures for each layer to know if cached image needs rebuild.
@@ -250,7 +166,7 @@ void GLRenderer::render() {
         qint64 strokeCount = ls.strokes.size();
         qint64 eraseCount = 0;
         qint64 pointsAccum = 0;
-        for (const auto &s : ls.strokes) {
+        for (const BrushStroke &s : ls.strokes) {
             if (s.mode == BrushStroke::Erase) ++eraseCount;
             pointsAccum += s.points.size();
         }
@@ -401,16 +317,27 @@ void GLRenderer::render() {
             continue;
         }
         if (m_cachedLayerVersions[li] != currentLayerVersions[li]) {
-            QImage layerImg(m_viewportSize, QImage::Format_ARGB32);
+            // Build layer image at document pixel size
+            int docW = m_canvas->documentWidth();
+            int docH = m_canvas->documentHeight();
+            if (docW <= 0 || docH <= 0) {
+                docW = std::max(1, m_viewportSize.width());
+                docH = std::max(1, m_viewportSize.height());
+            }
+            const QSize contentSize(static_cast<int>(std::round(docW * m_dpr)),
+                                    static_cast<int>(std::round(docH * m_dpr)));
+            QImage layerImg(contentSize, QImage::Format_ARGB32);
             layerImg.fill(Qt::transparent);
             // Raster base
             if (!ls.raster.isNull()) {
                 QImage r = ls.raster;
-                if (r.size() != m_viewportSize) r = r.scaled(m_viewportSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                if (r.size() != contentSize) r = r.scaled(contentSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                 QPainter rp(&layerImg); rp.drawImage(0,0,r); rp.end();
             }
             // Committed strokes (use per-point widths if recorded)
-            for (const auto &stroke : ls.strokes) {
+            // Iterate without detaching the Qt container
+            const QList<BrushStroke> &strokesConstRef = ls.strokes;
+            for (const BrushStroke &stroke : strokesConstRef) {
                 const QList<float>* widths = stroke.widths.isEmpty() ? nullptr : &stroke.widths;
                 stampStroke(layerImg, stroke.points, stroke.color, stroke.size, stroke.mode, widths);
             }
@@ -427,33 +354,19 @@ void GLRenderer::render() {
 
     if (layersChanged) {
         // Rebuild base composite excluding active layer
-        // Build a transparent base composite, draw a white "paper" rectangle at document size centered in view,
-        // then composite cached layers on top of it. This allows QML background to show around the paper.
-        m_baseCompositeExcludingActive = QImage(m_viewportSize, QImage::Format_ARGB32);
-        // DEBUG: fill base composite with bright cyan to verify renderer output (replace with uiBg after testing)
-        m_baseCompositeExcludingActive.fill(QColor(0x00,0xFF,0xFF));
+        // Build a transparent base composite the same size as the document.
+        m_baseCompositeExcludingActive = QImage(contentSize, QImage::Format_ARGB32);
+        m_baseCompositeExcludingActive.fill(Qt::transparent);
         QPainter basep(&m_baseCompositeExcludingActive);
-        // Compute document rectangle in pixel coordinates (logical document size * dpr)
-        int docW = m_canvas->documentWidth();
-        int docH = m_canvas->documentHeight();
-        if (docW <= 0 || docH <= 0) {
-            // fallback: use a large centered square if document size is not set
-            docW = std::min(m_viewportSize.width() - 40, m_viewportSize.height() - 40);
-            docH = docW;
-        }
-        const int docPixW = static_cast<int>(std::round(docW * m_dpr));
-        const int docPixH = static_cast<int>(std::round(docH * m_dpr));
-        const int docX = (m_viewportSize.width() - docPixW) / 2;
-        const int docY = (m_viewportSize.height() - docPixH) / 2;
-        // White paper background
-        basep.fillRect(docX, docY, docPixW, docPixH, Qt::white);
+        // White paper background covering the whole content area
+        basep.fillRect(0, 0, contentSize.width(), contentSize.height(), Qt::white);
         // If there's a base image, draw it scaled into the paper rect
         if (m_canvas && m_canvas->hasBaseImage()) {
             QImage base = m_canvas->baseImage();
-            if (base.size() != QSize(docPixW, docPixH)) base = base.scaled(docPixW, docPixH, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-            if (!base.isNull()) basep.drawImage(docX, docY, base);
+            if (base.size() != contentSize) base = base.scaled(contentSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            if (!base.isNull()) basep.drawImage(0, 0, base);
         }
-        // Composite all cached layers (these images already are viewport-sized and positioned)
+        // Composite all cached layers
         for (int li=0; li<m_cachedLayerImages.size(); ++li) {
             if (li == m_activeLayerIndexSnap) continue; // exclude active layer content
             const QImage &img = m_cachedLayerImages[li];
@@ -473,12 +386,12 @@ void GLRenderer::render() {
                 m_activeInProgressImage = m_cachedLayerImages[m_activeLayerIndexSnap];
             }
             if (m_activeInProgressImage.isNull()) {
-                m_activeInProgressImage = QImage(m_viewportSize, QImage::Format_ARGB32);
+                m_activeInProgressImage = QImage(contentSize, QImage::Format_ARGB32);
                 m_activeInProgressImage.fill(Qt::transparent);
             }
             m_lastInProgressStampedCount = 0;
             // Initialize final buffer composite now
-            if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
+            if (m_buffer.size() != contentSize) m_buffer = QImage(contentSize, QImage::Format_ARGB32);
             m_buffer.fill(Qt::transparent);
             QPainter initp(&m_buffer);
             if (!m_baseCompositeExcludingActive.isNull()) initp.drawImage(0,0,m_baseCompositeExcludingActive);
@@ -518,7 +431,7 @@ void GLRenderer::render() {
                     m_bufferDirty = true;
                 } else {
                     // Fallback: rebuild final composite this frame
-                    if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
+                    if (m_buffer.size() != contentSize) m_buffer = QImage(contentSize, QImage::Format_ARGB32);
                     m_buffer.fill(Qt::transparent);
                     QPainter finalRe(&m_buffer);
                     if (!m_baseCompositeExcludingActive.isNull()) finalRe.drawImage(0,0,m_baseCompositeExcludingActive);
@@ -534,7 +447,7 @@ void GLRenderer::render() {
 
     // Compose final buffer only if not drawing (or layers changed without incremental validity)
     if (!m_isDrawingSnap) {
-        if (m_buffer.size() != m_viewportSize) m_buffer = QImage(m_viewportSize, QImage::Format_ARGB32);
+        if (m_buffer.size() != contentSize) m_buffer = QImage(contentSize, QImage::Format_ARGB32);
         m_buffer.fill(Qt::transparent);
         QPainter finalComp(&m_buffer);
         if (!m_baseCompositeExcludingActive.isNull()) finalComp.drawImage(0,0,m_baseCompositeExcludingActive);
@@ -574,26 +487,45 @@ void GLRenderer::render() {
         }
     }
 
-    // Draw textured quad covering viewport
+    // Display transform: fit document height to viewport, keep aspect, center horizontally and vertically.
+    const float texW = (float)m_textureSize.width();
+    const float texH = (float)m_textureSize.height();
+    const float vpW = (float)m_viewportSize.width();
+    const float vpH = (float)m_viewportSize.height();
+    const float fitScale = (texH > 0.f) ? (vpH / texH) : 1.0f; // height-fit only
+    const float scaledW = texW * fitScale;
+    const float scaledH = texH * fitScale;
+    const float offsetX = (vpW - scaledW) * 0.5f; // center horizontally
+    const float offsetY = (vpH - scaledH) * 0.5f; // center vertically
+
+    // Helper to map document pixel coords to viewport NDC consistently (used by texture and overlay)
+    auto docPixToNdc = [&](float px, float py){
+        // Place inside centered box and convert to NDC
+        float sx = offsetX + px * fitScale;
+        float sy = offsetY + py * fitScale;
+        float ndcX = vpW > 0.f ? (sx / vpW) * 2.f - 1.f : 0.f;
+        float ndcY = vpH > 0.f ? (sy / vpH) * 2.f - 1.f : 0.f;
+        return QVector2D(ndcX, ndcY);
+    };
+
+    // Draw textured quad using the transform (no stretching beyond height fit, width follows aspect)
     m_program.bind();
     glBindTexture(GL_TEXTURE_2D, m_texture);
-    // Quad with UVs matching QImage's top-left origin (no vertical flip)
-    // Apply pan as NDC offset (logical units -> pixels -> NDC)
-    float dxNdc = (m_viewportSize.width() > 0 ? (2.0f * (m_panXSnap * (float)m_dpr) / (float)m_viewportSize.width()) : 0.0f);
-    float dyNdc = (m_viewportSize.height() > 0 ? (2.0f * (m_panYSnap * (float)m_dpr) / (float)m_viewportSize.height()) : 0.0f);
+    QVector2D bl = docPixToNdc(0.f, texH);      // bottom-left
+    QVector2D br = docPixToNdc(texW, texH);     // bottom-right
+    QVector2D tl = docPixToNdc(0.f, 0.f);       // top-left
+    QVector2D tr = docPixToNdc(texW, 0.f);      // top-right
     GLfloat verts[] = {
-        //  x     y      u    v
-        -1.f + dxNdc, -1.f + dyNdc,   0.f, 0.f, // bottom-left
-         1.f + dxNdc, -1.f + dyNdc,   1.f, 0.f, // bottom-right
-        -1.f + dxNdc,  1.f + dyNdc,   0.f, 1.f, // top-left
-         1.f + dxNdc,  1.f + dyNdc,   1.f, 1.f  // top-right
+        // x       y       u    v
+        bl.x(),   bl.y(),  0.f, 1.f,
+        br.x(),   br.y(),  1.f, 1.f,
+        tl.x(),   tl.y(),  0.f, 0.f,
+        tr.x(),   tr.y(),  1.f, 0.f
     };
-    // position (vec2) + uv (vec2)
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), verts);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), verts + 2);
-    // Set uniforms for transform
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
@@ -602,7 +534,7 @@ void GLRenderer::render() {
     // Show only while drawing (mouse pressed)
     QVector2D cursorLogical = m_cursorPosSnap - QVector2D(m_panXSnap, m_panYSnap);
     if (m_isDrawingSnap && cursorLogical.x() >= 0 && cursorLogical.y() >= 0) {
-        // Convert to pixel space for mapping, then to NDC; flip Y for GL
+        // Convert logical to document pixels, then apply same display transform
         QVector2D cursorPix = cursorLogical * (float)dpr;
         float sizeLogical = m_isDrawingSnap ? (m_currentWidthsSnap.isEmpty() ? m_currentSizeSnap : m_currentWidthsSnap.constLast())
                             : m_canvas->brushSize();
@@ -614,10 +546,9 @@ void GLRenderer::render() {
             float ang = (float)i / SEG * 2.0f * (float)M_PI;
             float px = cursorPix.x() + std::cos(ang) * radiusPix;
             float py = cursorPix.y() + std::sin(ang) * radiusPix;
-            float x = (px / m_viewportSize.width())*2.f - 1.f;
-            float y = (py / m_viewportSize.height())*2.f - 1.f; 
-            ringNdc.push_back(x);
-            ringNdc.push_back(y);
+            QVector2D ndc = docPixToNdc(px, py);
+            ringNdc.push_back(ndc.x());
+            ringNdc.push_back(ndc.y());
         }
         // Setup overlay shader and draw
         m_overlayProgram.bind();

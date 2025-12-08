@@ -10,8 +10,10 @@ Window {
     visible: true
     flags: Qt.Window
     modality: Qt.NonModal
-    width: initialWidth > 0 ? initialWidth : 800
-    height: initialHeight > 0 ? initialHeight : 600
+    // Always match the current display resolution for window size
+    // This ignores the initial canvas/document size for the outer window
+    width: Screen.width
+    height: Screen.height
     title: "Canvas - Trahere"
     color: "#ffffff"
 
@@ -338,24 +340,13 @@ Window {
                             } else if (canvasWindow.fallbackImageSource !== "") {
                                 glCanvas.loadBaseImage(canvasWindow.fallbackImageSource)
                             }
+                            // Final fallback: if document size still unset (-1), default to screen size
+                            if (glCanvas.documentWidth() < 1 || glCanvas.documentHeight() < 1) {
+                                var dw = (canvasWindow.initialWidth > 0 ? canvasWindow.initialWidth : Screen.width)
+                                var dh = (canvasWindow.initialHeight > 0 ? canvasWindow.initialHeight : Screen.height)
+                                glCanvas.setDocumentSize(dw, dh)
+                            }
                         }
-                    }
-                    // Document background (the white "paper" inside the gray drawing area)
-                    Rectangle {
-                        id: docOverlay
-                        // Compute displayed document size in view coordinates (apply item scale)
-                        property real docW: (glCanvas.documentWidth() > 0 ? glCanvas.documentWidth() * glCanvas.scale : Math.min(parent.width - 40, parent.height - 40))
-                        property real docH: (glCanvas.documentHeight() > 0 ? glCanvas.documentHeight() * glCanvas.scale : Math.min(parent.height - 40, parent.width - 40))
-                        width: docW
-                        height: docH
-                        x: (parent.width - width)/2 + glCanvas.panX * glCanvas.scale
-                        y: (parent.height - height)/2 + glCanvas.panY * glCanvas.scale
-                        color: "white"
-                        border.color: uiBorder
-                        border.width: 2
-                        radius: 2
-                        z: 0 // keep under the actual canvas so canvas drawing appears on top
-                        enabled: false // don't block mouse events to underlying canvas
                     }
                     // Debug Overlay
                     Rectangle {
@@ -380,6 +371,10 @@ Window {
                             Text { text: "pressure: " + glCanvas.debugPressure.toFixed(3); color: "white"; font.pixelSize: 12 }
                             Text { text: "size: " + glCanvas.debugSize.toFixed(2) + " px"; color: "white"; font.pixelSize: 12 }
                             Text { text: "zoom: " + (glCanvas.zoom * 100).toFixed(0) + "%"; color: "white"; font.pixelSize: 12 }
+                            Text { text: "Canvas width: " + canvasWindow.initialWidth + " px"; color: "white"; font.pixelSize: 12 }
+                            Text { text: "Canvas height: " + canvasWindow.initialHeight + " px"; color: "white"; font.pixelSize: 12 }
+                            Text { text: "doc w: " + glCanvas.documentWidth() + " px"; color: "white"; font.pixelSize: 12 }
+                            Text { text: "doc h: " + glCanvas.documentHeight() + " px"; color: "white"; font.pixelSize: 12 }
                         }
                     }
                 }

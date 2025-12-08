@@ -46,6 +46,9 @@ Canvas::Canvas(QQuickItem *parent)
       m_brushSize(5.0f),
       m_cursorPos(QVector2D(0,0))
 {
+    // Set a concrete default document size so renderer and UI agree
+    // User requested 4961x7016 portrait; use that unless overridden later
+    m_documentSize = QSize(4961, 7016);
     setAcceptedMouseButtons(Qt::AllButtons);
     setAcceptHoverEvents(true);
     setAcceptTouchEvents(true);
@@ -128,6 +131,20 @@ void Canvas::setBrushSize(float size) {
         m_brushSize = size;
         emit brushSizeChanged();
     }
+}
+
+void Canvas::setDocumentSize(int w, int h) {
+    // Clamp and also substitute defaults if zeros are passed
+    const int defW = 4961;
+    const int defH = 7016;
+    const int nw = (w > 0 ? w : defW);
+    const int nh = (h > 0 ? h : defH);
+    if (m_documentSize.width() == nw && m_documentSize.height() == nh) {
+        return;
+    }
+    m_documentSize = QSize(nw, nh);
+    qWarning() << "Canvas.setDocumentSize ->" << nw << "x" << nh;
+    update();
 }
 
 void Canvas::setActiveTool(int kind) {
@@ -521,6 +538,9 @@ QImage Canvas::compositedImage() const {
     // Determine target size prioritizing document size, then base/layer sizes, then view size, then fallback
     QSize targetSize = m_documentSize;
     if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+        targetSize = QSize(4961, 7016);
+    }
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) {
         if (!m_baseImage.isNull()) {
             targetSize = m_baseImage.size();
         } else {
@@ -779,6 +799,7 @@ bool Canvas::loadOraLayers(const QStringList &layerImagePaths) {
 
     // According to spec, first layer in stack.xml is top-most.
     // We need to append bottom-first so stacking in m_layers is bottom->top.
+    bool docSet = false;
     for (int i = layerImagePaths.size() - 1; i >= 0; --i) {
         const QString &path = layerImagePaths.at(i);
         QImage img(path);
@@ -790,8 +811,10 @@ bool Canvas::loadOraLayers(const QStringList &layerImagePaths) {
         layer->setName(QString("Layer %1").arg(m_layers.size()));
         layer->setRaster(img.convertToFormat(QImage::Format_RGBA8888));
         m_layers.append(layer);
-        if (m_documentSize.width() <= 0 || m_documentSize.height() <= 0) {
+        if (!docSet) {
+            // Set document size from first layer image loaded (matches ORA <image w,h>)
             m_documentSize = img.size();
+            docSet = true;
         }
     }
     emit layerCountChanged();

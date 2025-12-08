@@ -124,7 +124,7 @@ public:
     Q_INVOKABLE void resetView() { setZoom(1.0f); setPanX(0.0f); setPanY(0.0f); }
     
     // Explicitly set the intended document size (pixels) for saving/export
-    Q_INVOKABLE void setDocumentSize(int w, int h) { m_documentSize = QSize(qMax(1, w), qMax(1, h)); }
+    Q_INVOKABLE void setDocumentSize(int w, int h);
     Q_INVOKABLE int documentWidth() const { return m_documentSize.width(); }
     Q_INVOKABLE int documentHeight() const { return m_documentSize.height(); }
     // Document visual offset (centering) used to keep stroke coords stable across save/load
