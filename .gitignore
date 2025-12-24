@@ -70,8 +70,8 @@ CMakeLists.txt.user*
 
 # Binaries
 # --------
-*.dll
-*.exe
+# *.dll
+# *.exe
 
 # Directories with generated files
 .moc/
