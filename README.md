@@ -14,3 +14,11 @@ Trahere adalah aplikasi gambar digital yang berfokus pada kemudahan penggunaan. 
 - Qt
 - C++1
 - OpenGL
+
+## Exe file
+
+Run exe directly
+
+```
+.. /Qt_release/appTrahere.exe
+```
